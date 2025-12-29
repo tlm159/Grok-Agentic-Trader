@@ -1,0 +1,47 @@
+{
+  "llm": {
+    "provider": "xai",
+    "model": "grok-4-1-fast-reasoning",
+    "base_url": "https://api.x.ai/v1",
+    "temperature": 0.2
+  },
+  "live_search": {
+    "enabled": true,
+    "model": "grok-4-1-fast-reasoning",
+    "queries": [
+      "Find the most recent market-moving news and sentiment about US stocks and crypto. Focus on tickers and the last 24 hours. Summarize in 5 bullets.",
+      "Identify the top 5 trending tickers on social media and explain why they are trending (last 24 hours).",
+      "List any major macro events, earnings, or regulatory headlines affecting markets today."
+    ],
+    "max_sources": 2,
+    "max_queries_per_run": 1,
+    "cooldown_minutes": 0,
+    "cache_path": "data/live_search_cache.json"
+  },
+  "market": {
+    "provider": "yfinance"
+  },
+  "trading": {
+    "mode": "paper",
+    "currency": "USD",
+    "starting_cash": 100.0,
+    "cycle_minutes": 30,
+    "price_refresh_seconds": 10,
+    "default_sl_pct": null,
+    "default_tp_pct": null,
+    "universe": [],
+    "watchlist": [],
+    "symbol_rules": "Any Yahoo Finance ticker (stocks, ETFs, crypto pairs like BTC-USD).",
+    "allow_negative_cash": true,
+    "allow_short": true,
+    "universe_mode": "llm_any",
+    "max_positions": null,
+    "max_trades_per_day": null
+  },
+  "paths": {
+    "state_path": "data/state.json",
+    "trades_path": "data/trades.jsonl",
+    "dashboard_path": "data/dashboard.json",
+    "loop_state_path": "data/loop_state.json"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-12-29T20:09:06.968021+00:00",
+  "context": "[Query 1] Find the most recent market-moving news and sentiment about US stocks and crypto. Focus on tickers and the last 24 hours. Summarize in 5 bullets.\n- **US Equities Slide on Tech Weakness**: S&P 500 (-0.42% to 6,900), Nasdaq (-0.62% to 23,446), Dow (-0.47% to 48,481) opened lower; NVDA and TSLA drag amid year-end profit-taking and holiday-thin volumes, sentiment cautious ahead of Fed minutes.\n- **Tech Sector Retreat**: NVDA, TSLA fall as investors trim risk in final 2025 trading week; broader pullback after strong yearly gains (Nasdaq +22% YTD), Stocktwits shows mixed bullish/neutral on SPY/QQQ.\n- **BTC Hovers ~$87.5K**: Bitcoin slips 0.4-0.5% from $90K test amid quiet trading; whales (1K-10K BTC holders) accumulate, positive sentiment on Glassnode data despite holiday lull.\n- **MSTR Bolsters BTC Holdings**: MicroStrategy buys 1,229 BTC for $109M (avg $88.6K), total now 672,497 BTC; seen as bullish catalyst, stock likely to react positively on open.\n- **ETH & Alts Gain Ground**: ETH ~$2,930 (+0.7%) with whales adding $1.2B; Bitmine (BMNR) holds 4.1M ETH (3.4% supply); crypto mkt cap +0.8% to $3.06T, alts outperform BTC amid precious metals rally context.",
+  "queries": [
+    "Find the most recent market-moving news and sentiment about US stocks and crypto. Focus on tickers and the last 24 hours. Summarize in 5 bullets."
+  ],
+  "history": [
+    {
+      "timestamp": "2025-12-29T20:09:06.968021+00:00",
+      "context": "[Query 1] Find the most recent market-moving news and sentiment about US stocks and crypto. Focus on tickers and the last 24 hours. Summarize in 5 bullets.\n- **US Equities Slide on Tech Weakness**: S&P 500 (-0.42% to 6,900), Nasdaq (-0.62% to 23,446), Dow (-0.47% to 48,481) opened lower; NVDA and TSLA drag amid year-end profit-taking and holiday-thin volumes, sentiment cautious ahead of Fed minutes.\n- **Tech Sector Retreat**: NVDA, TSLA fall as investors trim risk in final 2025 trading week; broader pullback after strong yearly gains (Nasdaq +22% YTD), Stocktwits shows mixed bullish/neutral on SPY/QQQ.\n- **BTC Hovers ~$87.5K**: Bitcoin slips 0.4-0.5% from $90K test amid quiet trading; whales (1K-10K BTC holders) accumulate, positive sentiment on Glassnode data despite holiday lull.\n- **MSTR Bolsters BTC Holdings**: MicroStrategy buys 1,229 BTC for $109M (avg $88.6K), total now 672,497 BTC; seen as bullish catalyst, stock likely to react positively on open.\n- **ETH & Alts Gain Ground**: ETH ~$2,930 (+0.7%) with whales adding $1.2B; Bitmine (BMNR) holds 4.1M ETH (3.4% supply); crypto mkt cap +0.8% to $3.06T, alts outperform BTC amid precious metals rally context.",
+      "queries": [
+        "Find the most recent market-moving news and sentiment about US stocks and crypto. Focus on tickers and the last 24 hours. Summarize in 5 bullets."
+      ]
+    }
+  ]
+}
