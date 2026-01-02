@@ -6,16 +6,16 @@ Autonomous Grok-powered trading bot (paper trading) with a lightweight real-time
 
 ```mermaid
 flowchart TD
-  A[Market data via yfinance] --> B[Session gate (NY hours + cutoff)]
+  A[Market data via yfinance] --> B[Session gate: NY hours, cutoff]
   B -->|In session| C[Live search]
-  B -->|Out of session| H[Auto HOLD + logs]
+  B -->|Out of session| H[Auto HOLD and logs]
   C --> D[LLM decision: Grok]
   D --> E{BUY / SELL / HOLD}
   E -->|Trade| F[Paper broker]
   F --> G[Portfolio state]
   E -->|Hold| G
   G --> I[Dashboard JSON]
-  I --> J[UI (real-time)]
+  I --> J[UI realtime]
   D --> K[Decision log]
   F --> K
   L[Price loop] --> I
