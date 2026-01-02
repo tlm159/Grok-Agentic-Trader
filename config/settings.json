@@ -31,7 +31,7 @@
     "default_tp_pct": null,
     "universe": [],
     "watchlist": [],
-    "symbol_rules": "Any Yahoo Finance ticker (stocks, ETFs, crypto pairs like BTC-USD).",
+    "symbol_rules": "US-listed equities only (no crypto or FX pairs).",
     "allow_negative_cash": true,
     "allow_short": true,
     "universe_mode": "llm_any",
@@ -42,6 +42,7 @@
     "state_path": "data/state.json",
     "trades_path": "data/trades.jsonl",
     "dashboard_path": "data/dashboard.json",
-    "loop_state_path": "data/loop_state.json"
+    "loop_state_path": "data/loop_state.json",
+    "run_log_path": "data/run.log"
   }
 }

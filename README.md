@@ -1,18 +1,24 @@
 # Grok-Agentic-Trader
 
-Autonomous Grok-powered trading bot (paper trading). The LLM decides what to trade and when. No guardrails by default.
+Autonomous Grok-powered trading bot (paper trading) with a lightweight real-time UI.
 
 ## How it works
 
 ```mermaid
 flowchart TD
-  A[Market data via yfinance] --> B[LLM decision: Grok]
-  B --> C{BUY / SELL / HOLD}
-  C -->|Trade| D[Paper broker]
-  D --> E[Portfolio state]
-  C -->|Hold| E
-  B --> F[Decision log]
-  D --> F
+  A[Market data via yfinance] --> B[Session gate (NY hours + cutoff)]
+  B -->|In session| C[Live search]
+  B -->|Out of session| H[Auto HOLD + logs]
+  C --> D[LLM decision: Grok]
+  D --> E{BUY / SELL / HOLD}
+  E -->|Trade| F[Paper broker]
+  F --> G[Portfolio state]
+  E -->|Hold| G
+  G --> I[Dashboard JSON]
+  I --> J[UI (real-time)]
+  D --> K[Decision log]
+  F --> K
+  L[Price loop] --> I
 ```
 
 ## Quickstart
@@ -71,11 +77,22 @@ Or run the bot in a loop and keep the UI auto-refreshing:
 
 The live scripts also run a lightweight price loop (no AI) to refresh PnL in real time.
 
-## Live Search Cost Control
+## Trading rules (current behavior)
+
+- US-listed equities only (crypto/FX blocked).
+- New York session only (auto-handles DST; shown in Paris time).
+- No new positions 30 minutes before NY close.
+- All open positions are closed at NY close (22:00 FR).
+- No trading on weekends.
+- BUY requires both SL/TP; Grok can adjust SL/TP via HOLD.
+- Decision loop runs every `cycle_minutes` (default 30 min).
+
+## Live search and cost control
 
 You can keep live search on while limiting costs:
 - `live_search.max_queries_per_run`: limit queries per cycle
 - `live_search.cooldown_minutes`: reuse cached results for this long
+- `live_search.max_sources`: sources per query (each source is billed)
 
 ## Live Search (optional)
 
@@ -97,13 +114,15 @@ Note: live search uses extra paid sources. You are billed by xAI for live search
 
 - `config/settings.json`: model, base_url, trade mode (paper), and risk flags.
 - `config/settings.json` also controls `starting_cash` if no state exists yet.
-- `data/state.json`: starting cash and current positions.
-- `data/trades.jsonl`: decisions, prompts, and trades log.
+- Runtime data is stored in `data/` (state, trades, dashboard), but it is ignored by git.
 
 ## Notes
 
 - Prices come from Yahoo Finance via `yfinance`.
-- The bot chooses any ticker it wants (US stocks or crypto pairs like `BTC-USD`).
+- The bot chooses any US-listed ticker it wants (crypto/FX are blocked).
+- `scripts/run_live.sh` includes a lockfile to prevent multiple loops and avoid extra API costs.
+- Text logs are written to `data/run.log` for quick inspection without the UI.
+  - Live tail: `tail -f data/run.log`
 
 ## Disclaimer
 

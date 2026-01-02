@@ -1,5 +1,7 @@
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -8,7 +10,7 @@ from config import load_config
 from dashboard import load_decision_history, load_equity_series, write_dashboard
 from decision import parse_decision
 from llm import LLMClient
-from log_utils import append_event
+from log_utils import append_event, append_run_log
 from live_search import LiveSearchUnavailable, fetch_live_context
 from live_search_cache import is_cache_fresh, read_cache, write_cache
 from market import get_last_price
@@ -119,6 +121,87 @@ def build_positions_summary(portfolio):
     return f"Positions ouvertes: {symbols}."
 
 
+def get_session_state():
+    ny_tz = ZoneInfo("America/New_York")
+    paris_tz = ZoneInfo("Europe/Paris")
+    now_ny = datetime.now(ny_tz)
+    open_ny = now_ny.replace(hour=9, minute=30, second=0, microsecond=0)
+    close_ny = now_ny.replace(hour=16, minute=0, second=0, microsecond=0)
+    cutoff_ny = close_ny - timedelta(minutes=30)
+    return {
+        "now_ny": now_ny,
+        "open_ny": open_ny,
+        "close_ny": close_ny,
+        "cutoff_ny": cutoff_ny,
+        "open_paris": open_ny.astimezone(paris_tz),
+        "close_paris": close_ny.astimezone(paris_tz),
+        "cutoff_paris": cutoff_ny.astimezone(paris_tz),
+        "is_weekend": now_ny.weekday() >= 5,
+        "in_session": open_ny <= now_ny < close_ny,
+        "in_cutoff": cutoff_ny <= now_ny < close_ny,
+        "after_close": now_ny >= close_ny,
+    }
+
+
+def build_hold_decision(reason, positions_open, positions_summary, next_minutes, reflection=None):
+    return {
+        "action": "HOLD",
+        "symbol": None,
+        "notional": None,
+        "reason": reason,
+        "confidence": 0.5,
+        "reflection": reflection or "Je reste en attente.",
+        "sl_price": None,
+        "tp_price": None,
+        "next_check_minutes": next_minutes,
+        "positions_ack": "OPEN" if positions_open else "NONE",
+        "positions_summary": positions_summary,
+        "evidence": [],
+    }
+
+
+def is_crypto_or_fx(symbol):
+    if not symbol:
+        return False
+    upper = symbol.upper()
+    return upper.endswith(("-USD", "-USDT", "-USDC")) or upper.endswith("=X")
+
+
+def format_log_value(value, precision=4):
+    if value is None:
+        return "-"
+    try:
+        return f"{float(value):.{precision}f}"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def log_decision(run_log_path, decision, note=None):
+    if not decision:
+        return
+    action = decision.get("action", "-")
+    symbol = decision.get("symbol") or "-"
+    notional = format_log_value(decision.get("notional"))
+    reason = (decision.get("reason") or "-").replace("\n", " ").strip()
+    extra = f" [{note}]" if note else ""
+    append_run_log(
+        run_log_path,
+        f"Decision{extra}: {action} {symbol} notional={notional} reason={reason}",
+    )
+
+
+def log_trade(run_log_path, result, reason=None):
+    if not result:
+        return
+    line = (
+        f"Trade: {result.action} {result.symbol} qty={format_log_value(result.qty)} "
+        f"price={format_log_value(result.price)} notional={format_log_value(result.notional)}"
+    )
+    if reason:
+        line = f"{line} reason={reason}"
+    append_run_log(run_log_path, line)
+
+
 def list_exit_triggers(market_snapshot):
     triggers = []
     for symbol, info in market_snapshot["positions"].items():
@@ -153,6 +236,63 @@ def list_exit_triggers(market_snapshot):
     return triggers
 
 
+def close_all_positions(portfolio, broker, trades_path, reason):
+    last_trade = None
+    for symbol, entry in list(portfolio.positions.items()):
+        normalized = Portfolio.normalize_position(entry)
+        qty = normalized.get("qty", 0.0)
+        if abs(qty) < 1e-8:
+            continue
+        price = get_last_price(symbol)
+        if price is None:
+            append_event(
+                trades_path,
+                {
+                    "type": "error",
+                    "message": f"No price data for {symbol} during session close",
+                    "symbol": symbol,
+                },
+            )
+            continue
+        action = "SELL" if qty > 0 else "BUY"
+        notional = abs(qty) * price
+        result = broker.execute(
+            action=action,
+            symbol=symbol,
+            notional=notional,
+            price=price,
+            portfolio=portfolio,
+        )
+        last_trade = result
+        append_event(
+            trades_path,
+            {
+                "type": "session_close",
+                "symbol": symbol,
+                "qty": qty,
+                "price": price,
+                "reason": reason,
+            },
+        )
+        append_event(
+            trades_path,
+            {
+                "type": "trade",
+                "result": {
+                    "action": result.action,
+                    "symbol": result.symbol,
+                    "qty": result.qty,
+                    "price": result.price,
+                    "notional": result.notional,
+                    "timestamp": result.timestamp,
+                },
+                "reason": reason,
+                "confidence": None,
+            },
+        )
+    return last_trade
+
+
 def build_system_prompt():
     return (
         "You are an autonomous trading agent with full discretion. "
@@ -173,6 +313,7 @@ def build_user_prompt(
     allowed_symbols,
     symbol_rules,
     decision_memory,
+    fixed_minutes,
 ):
     return (
         "Portfolio:\n"
@@ -201,7 +342,7 @@ def build_user_prompt(
         "To adjust SL/TP without trading, use action HOLD with symbol and new sl_price/tp_price.\n"
         "If no SL/TP change is needed, set sl_price and tp_price to null.\n"
         "All free-text fields must be in French: reason, reflection, positions_summary, evidence.\n"
-        "Set next_check_minutes to 60 (system uses a fixed hourly schedule).\n"
+        f"Set next_check_minutes to {fixed_minutes} (system uses a fixed schedule).\n"
         "You must set positions_ack to OPEN if there are open positions, otherwise NONE. "
         "Provide positions_summary describing current open positions.\n"
         "Reply with JSON and nothing else using this schema:\n"
@@ -359,6 +500,7 @@ def main():
     state_path = config["paths"]["state_path"]
     trades_path = config["paths"]["trades_path"]
     dashboard_path = config["paths"]["dashboard_path"]
+    run_log_path = config["paths"].get("run_log_path")
     allowed_symbols = [symbol.upper() for symbol in config["trading"].get("universe", [])]
     watchlist_symbols = config["trading"].get("watchlist", []) or allowed_symbols
     watchlist_symbols = [symbol.upper() for symbol in watchlist_symbols]
@@ -387,46 +529,6 @@ def main():
         },
     )
     equity_series = load_equity_series(trades_path, limit=200)
-
-    live_context = "none"
-    live_search_cfg = config.get("live_search", {})
-    if live_search_cfg.get("enabled"):
-        cache_path = live_search_cfg.get("cache_path", "data/live_search_cache.json")
-        cooldown_minutes = live_search_cfg.get("cooldown_minutes", 60)
-        cached = read_cache(cache_path)
-        if is_cache_fresh(cached, cooldown_minutes):
-            live_context = cached.get("context", "none")
-            append_event(trades_path, {"type": "live_search_cache_hit"})
-        else:
-            queries = live_search_cfg.get("queries")
-            if not queries:
-                queries = [live_search_cfg.get("query", "")]
-            max_queries = live_search_cfg.get("max_queries_per_run", len(queries))
-            queries = list(queries)[: max(1, int(max_queries))]
-            try:
-                contexts = []
-                for idx, query in enumerate(queries, start=1):
-                    context = fetch_live_context(
-                        query=query,
-                        model=live_search_cfg.get("model", config["llm"]["model"]),
-                        max_sources=live_search_cfg.get("max_sources"),
-                    )
-                    contexts.append(f"[Query {idx}] {query}\n{context}")
-                live_context = "\n\n".join(contexts)
-                write_cache(cache_path, live_context, queries)
-                append_event(trades_path, {"type": "live_search_cache_write"})
-            except LiveSearchUnavailable as exc:
-                live_context = "unavailable"
-                if cached and cached.get("context"):
-                    live_context = cached.get("context")
-                    append_event(
-                        trades_path,
-                        {"type": "live_search_fallback_cache", "message": str(exc)},
-                    )
-                else:
-                    append_event(
-                        trades_path, {"type": "live_search_error", "message": str(exc)}
-                    )
 
     exit_triggers = list_exit_triggers(market_snapshot)
     if exit_triggers:
@@ -473,6 +575,7 @@ def main():
                     "confidence": None,
                 },
             )
+            log_trade(run_log_path, result, reason="AUTO_EXIT")
         portfolio.save(state_path)
         market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
         equity = market_snapshot["equity"]
@@ -497,6 +600,7 @@ def main():
             "sl_price": None,
             "tp_price": None,
         }
+        log_decision(run_log_path, decision, note="AUTO_EXIT")
         dashboard_payload = build_dashboard_payload(
             config=config,
             portfolio=portfolio,
@@ -523,6 +627,210 @@ def main():
         write_dashboard(dashboard_path, dashboard_payload)
         return
 
+    session = get_session_state()
+    positions_open = len(portfolio.positions) > 0
+    positions_summary_default = build_positions_summary(portfolio)
+    fixed_next_minutes = config["trading"].get("cycle_minutes", 60)
+
+    if session["after_close"] and positions_open and not session["is_weekend"]:
+        broker = PaperBroker(
+            allow_negative_cash=config["trading"]["allow_negative_cash"],
+            allow_short=config["trading"]["allow_short"],
+        )
+        reason = "SESSION_CLOSE"
+        last_trade = close_all_positions(portfolio, broker, trades_path, reason)
+        log_trade(run_log_path, last_trade, reason=reason)
+        portfolio.save(state_path)
+        market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
+        equity = market_snapshot["equity"]
+        append_event(
+            trades_path,
+            {
+                "type": "equity",
+                "equity": equity,
+                "cash": portfolio.cash,
+                "positions_value": market_snapshot["positions_value"],
+            },
+        )
+        equity_series = load_equity_series(trades_path, limit=200)
+        decision = {
+            "action": "SELL",
+            "symbol": last_trade.symbol if last_trade else None,
+            "notional": last_trade.notional if last_trade else None,
+            "reason": "Clôture de session NY : positions fermées par sécurité.",
+            "confidence": None,
+            "reflection": "Clôture automatique à 22h (heure FR).",
+            "sl_price": None,
+            "tp_price": None,
+            "next_check_minutes": fixed_next_minutes,
+            "positions_ack": "NONE",
+            "positions_summary": "Aucune position ouverte.",
+            "evidence": [],
+        }
+        log_decision(run_log_path, decision, note="SESSION_CLOSE")
+        append_event(
+            trades_path, {"type": "decision_parsed", "decision": decision, "attempt": 0}
+        )
+        decision_history = load_decision_history(trades_path, limit=12)
+        dashboard_payload = build_dashboard_payload(
+            config=config,
+            portfolio=portfolio,
+            market_snapshot=market_snapshot,
+            equity=equity,
+            equity_delta=equity_delta,
+            decision=decision,
+            raw=None,
+            prompt=None,
+            trade={
+                "action": last_trade.action,
+                "symbol": last_trade.symbol,
+                "qty": last_trade.qty,
+                "price": last_trade.price,
+                "notional": last_trade.notional,
+                "timestamp": last_trade.timestamp,
+            }
+            if last_trade
+            else None,
+            error=None,
+            equity_series=equity_series,
+            decision_history=decision_history,
+        )
+        write_dashboard(dashboard_path, dashboard_payload)
+        return
+
+    if session["is_weekend"]:
+        decision = build_hold_decision(
+            "Week-end : marchés US fermés.",
+            positions_open,
+            positions_summary_default,
+            fixed_next_minutes,
+            reflection=positions_summary_default,
+        )
+        log_decision(run_log_path, decision, note="WEEKEND")
+        append_event(
+            trades_path, {"type": "decision_parsed", "decision": decision, "attempt": 0}
+        )
+        decision_history = load_decision_history(trades_path, limit=12)
+        dashboard_payload = build_dashboard_payload(
+            config=config,
+            portfolio=portfolio,
+            market_snapshot=market_snapshot,
+            equity=equity,
+            equity_delta=equity_delta,
+            decision=decision,
+            raw=None,
+            prompt=None,
+            trade=None,
+            error=None,
+            equity_series=equity_series,
+            decision_history=decision_history,
+        )
+        write_dashboard(dashboard_path, dashboard_payload)
+        return
+
+    if session["in_cutoff"]:
+        cutoff = session["cutoff_paris"].strftime("%H:%M")
+        decision = build_hold_decision(
+            f"Fenêtre de clôture : pas de nouvelle position après {cutoff} (heure FR).",
+            positions_open,
+            positions_summary_default,
+            fixed_next_minutes,
+            reflection=positions_summary_default,
+        )
+        log_decision(run_log_path, decision, note="CUTOFF")
+        append_event(
+            trades_path, {"type": "decision_parsed", "decision": decision, "attempt": 0}
+        )
+        decision_history = load_decision_history(trades_path, limit=12)
+        dashboard_payload = build_dashboard_payload(
+            config=config,
+            portfolio=portfolio,
+            market_snapshot=market_snapshot,
+            equity=equity,
+            equity_delta=equity_delta,
+            decision=decision,
+            raw=None,
+            prompt=None,
+            trade=None,
+            error=None,
+            equity_series=equity_series,
+            decision_history=decision_history,
+        )
+        write_dashboard(dashboard_path, dashboard_payload)
+        return
+
+    if not session["in_session"]:
+        open_time = session["open_paris"].strftime("%H:%M")
+        close_time = session["close_paris"].strftime("%H:%M")
+        decision = build_hold_decision(
+            f"Hors session NY ({open_time}–{close_time} heure FR).",
+            positions_open,
+            positions_summary_default,
+            fixed_next_minutes,
+            reflection=positions_summary_default,
+        )
+        log_decision(run_log_path, decision, note="OUT_OF_SESSION")
+        append_event(
+            trades_path, {"type": "decision_parsed", "decision": decision, "attempt": 0}
+        )
+        decision_history = load_decision_history(trades_path, limit=12)
+        dashboard_payload = build_dashboard_payload(
+            config=config,
+            portfolio=portfolio,
+            market_snapshot=market_snapshot,
+            equity=equity,
+            equity_delta=equity_delta,
+            decision=decision,
+            raw=None,
+            prompt=None,
+            trade=None,
+            error=None,
+            equity_series=equity_series,
+            decision_history=decision_history,
+        )
+        write_dashboard(dashboard_path, dashboard_payload)
+        return
+
+    live_context = "none"
+    live_search_cfg = config.get("live_search", {})
+    if live_search_cfg.get("enabled"):
+        cache_path = live_search_cfg.get("cache_path", "data/live_search_cache.json")
+        cooldown_minutes = live_search_cfg.get("cooldown_minutes", 60)
+        cached = read_cache(cache_path)
+        if is_cache_fresh(cached, cooldown_minutes):
+            live_context = cached.get("context", "none")
+            append_event(trades_path, {"type": "live_search_cache_hit"})
+        else:
+            queries = live_search_cfg.get("queries")
+            if not queries:
+                queries = [live_search_cfg.get("query", "")]
+            max_queries = live_search_cfg.get("max_queries_per_run", len(queries))
+            queries = list(queries)[: max(1, int(max_queries))]
+            try:
+                contexts = []
+                for idx, query in enumerate(queries, start=1):
+                    context = fetch_live_context(
+                        query=query,
+                        model=live_search_cfg.get("model", config["llm"]["model"]),
+                        max_sources=live_search_cfg.get("max_sources"),
+                    )
+                    contexts.append(f"[Query {idx}] {query}\n{context}")
+                live_context = "\n\n".join(contexts)
+                write_cache(cache_path, live_context, queries)
+                append_event(trades_path, {"type": "live_search_cache_write"})
+            except LiveSearchUnavailable as exc:
+                live_context = "unavailable"
+                if cached and cached.get("context"):
+                    live_context = cached.get("context")
+                    append_event(
+                        trades_path,
+                        {"type": "live_search_fallback_cache", "message": str(exc)},
+                    )
+                else:
+                    append_event(
+                        trades_path, {"type": "live_search_error", "message": str(exc)}
+                    )
+
     recent_events = load_recent_events(trades_path, limit=5)
     system_prompt = build_system_prompt()
     decision_memory = load_decision_history(trades_path, limit=6)
@@ -536,6 +844,7 @@ def main():
         allowed_symbols,
         symbol_rules,
         decision_memory,
+        fixed_next_minutes,
     )
     prompt_payload = {"system": system_prompt, "user": user_prompt}
     append_event(trades_path, {"type": "prompt", "prompt": prompt_payload})
@@ -546,8 +855,6 @@ def main():
         temperature=config["llm"]["temperature"],
     )
 
-    positions_open = len(portfolio.positions) > 0
-    positions_summary_default = build_positions_summary(portfolio)
     raw, decision = request_decision(
         llm,
         system_prompt,
@@ -556,8 +863,8 @@ def main():
         positions_open=positions_open,
         positions_summary_default=positions_summary_default,
     )
-    fixed_next_minutes = config["trading"].get("cycle_minutes", 60)
     decision["next_check_minutes"] = fixed_next_minutes
+    log_decision(run_log_path, decision, note="LLM")
 
     if decision["action"] == "HOLD":
         updated_position = False
@@ -645,6 +952,34 @@ def main():
     symbol = decision["symbol"]
     notional = decision["notional"]
 
+    if is_crypto_or_fx(symbol):
+        append_event(
+            trades_path,
+            {
+                "type": "error",
+                "message": f"Crypto/FX symbol blocked: {symbol}",
+                "symbol": symbol,
+            },
+        )
+        log_decision(run_log_path, decision, note="BLOCKED_SYMBOL")
+        decision_history = load_decision_history(trades_path, limit=12)
+        dashboard_payload = build_dashboard_payload(
+            config=config,
+            portfolio=portfolio,
+            market_snapshot=market_snapshot,
+            equity=equity,
+            equity_delta=equity_delta,
+            decision=decision,
+            raw=raw,
+            prompt=prompt_payload,
+            trade=None,
+            error=f"Crypto/FX symbol blocked: {symbol}",
+            equity_series=equity_series,
+            decision_history=decision_history,
+        )
+        write_dashboard(dashboard_path, dashboard_payload)
+        return
+
     price = get_last_price(symbol)
     if price is None:
         append_event(
@@ -686,6 +1021,7 @@ def main():
         sl_price=decision.get("sl_price"),
         tp_price=decision.get("tp_price"),
     )
+    log_trade(run_log_path, result, reason=decision.get("reason"))
 
     portfolio.save(state_path)
     append_event(
