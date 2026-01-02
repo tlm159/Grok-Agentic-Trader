@@ -21,9 +21,9 @@ flowchart TD
   L[Price loop] --> I
 ```
 
-## Quickstart
+## Quickstart (Linux)
 
-1) Install deps:
+1) Create venv + install deps:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -36,46 +36,23 @@ cp .env.example .env
 # then edit .env
 ```
 
-3) Run once:
-```bash
-python src/main.py
-```
-
-## Live UI
-
-This lightweight UI reads `data/dashboard.json` and auto-refreshes.
-
-1) Run the bot loop in one terminal:
-```bash
-python src/loop.py
-```
-
-2) Serve the UI in another terminal:
-```bash
-python -m http.server 8000
-```
-
-Open `http://localhost:8000/ui/simple/`.
-
-Or run both with one command:
-
-```bash
-./scripts/run_simple_live.sh
-```
-
-Or run the bot once and then open the UI:
-
-```bash
-./scripts/run_dashboard.sh
-```
-
-Or run the bot in a loop and keep the UI auto-refreshing:
-
+3) Run bot + UI:
 ```bash
 ./scripts/run_live.sh
 ```
 
-The live scripts also run a lightweight price loop (no AI) to refresh PnL in real time.
+4) Open the UI:
+```
+http://localhost:8000
+```
+
+5) Stop:
+Press `CTRL+C` in the same terminal.
+
+## Live UI
+
+The UI auto-refreshes and reads `data/dashboard.json`.
+Open `http://localhost:8000` after starting `./scripts/run_live.sh`.
 
 ## Trading rules (current behavior)
 
@@ -86,6 +63,25 @@ The live scripts also run a lightweight price loop (no AI) to refresh PnL in rea
 - No trading on weekends.
 - BUY requires both SL/TP; Grok can adjust SL/TP via HOLD.
 - Decision loop runs every `cycle_minutes` (default 30 min).
+
+## What the AI does
+
+Each cycle (during NY session), Grok receives:
+- Portfolio state (cash, open positions, SL/TP, PnL).
+- Market snapshot from yfinance.
+- Live search context (latest market news/sentiment).
+- Recent events and decision memory.
+
+Then it returns a single JSON decision:
+- `action`: BUY / SELL / HOLD.
+- `symbol`: US-listed ticker to trade.
+- `notional`: amount to allocate.
+- `sl_price` / `tp_price`: mandatory for BUY.
+- `reason`, `reflection`, `evidence`: French explanation of its choice.
+
+The AI can also:
+- Choose HOLD when there is no high‑conviction setup (no forced trades).
+- Adjust SL/TP on existing positions via HOLD.
 
 ## Live search and cost control
 
