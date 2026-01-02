@@ -11,10 +11,10 @@ if [[ -f "$LOCK_FILE" ]]; then
 fi
 echo "$$" > "$LOCK_FILE"
 
-python src/reset_all.py
-python src/loop.py &
+python3 src/reset_all.py
+python3 src/loop.py &
 BOT_PID=$!
-python src/price_loop.py &
+python3 src/price_loop.py &
 PRICE_PID=$!
 
 cleanup() {
@@ -24,4 +24,4 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python -m http.server 8000
+python3 -m http.server 8000
