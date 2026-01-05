@@ -144,6 +144,7 @@ Note: live search uses extra paid sources. You are billed by xAI for live search
 - Prices come from Yahoo Finance via `yfinance`.
 - The bot chooses any US-listed ticker it wants (crypto/FX are blocked).
 - `scripts/run_live.sh` includes a lockfile to prevent multiple loops and avoid extra API costs.
+- If the UI shows "Decision invalide", inspect the raw model output in `data/trades.jsonl`.
 - Text logs are written to `data/run.log` for quick inspection without the UI.
   - Live tail: `tail -f data/run.log`
 
