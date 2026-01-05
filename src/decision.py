@@ -3,6 +3,59 @@ import json
 ALLOWED_ACTIONS = {"BUY", "SELL", "HOLD"}
 
 
+def _strip_code_fences(text):
+    if "```" not in text:
+        return text
+    parts = text.split("```")
+    if len(parts) < 3:
+        return text
+    block = parts[1]
+    lines = block.splitlines()
+    if lines and lines[0].strip().lower() == "json":
+        return "\n".join(lines[1:]).strip()
+    return block.strip()
+
+
+def _extract_json_object(text):
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    return text[start : end + 1]
+
+
+def _repair_json(text):
+    if not text:
+        return text
+    candidate = text.replace(",}", "}").replace(",]", "]")
+    open_brackets = candidate.count("[")
+    close_brackets = candidate.count("]")
+    if close_brackets < open_brackets and candidate.endswith("}"):
+        candidate = candidate[:-1] + ("]" * (open_brackets - close_brackets)) + "}"
+    return candidate
+
+
+def _safe_json_load(text):
+    cleaned = _strip_code_fences(text).strip()
+    candidates = [cleaned]
+    extracted = _extract_json_object(cleaned)
+    if extracted and extracted != cleaned:
+        candidates.append(extracted)
+    for candidate in list(candidates):
+        repaired = _repair_json(candidate)
+        if repaired and repaired not in candidates:
+            candidates.append(repaired)
+    last_error = None
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    raise ValueError("Invalid JSON")
+
+
 def parse_optional_price(value, label):
     if value is None:
         return None
@@ -22,7 +75,7 @@ def parse_optional_minutes(value):
 
 
 def parse_decision(text):
-    data = json.loads(text)
+    data = _safe_json_load(text)
     action = str(data.get("action", "")).upper()
     if action not in ALLOWED_ACTIONS:
         raise ValueError(f"Unsupported action: {action}")
