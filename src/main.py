@@ -128,7 +128,9 @@ def get_session_state():
     paris_tz = ZoneInfo("Europe/Paris")
     now_ny = datetime.now(ny_tz)
     open_ny = now_ny.replace(hour=9, minute=30, second=0, microsecond=0)
-    close_ny = now_ny.replace(hour=16, minute=0, second=0, microsecond=0)
+    # SAFETY: We set "close_ny" to 15:55 (5 mins before actual close)
+    # This ensures "after_close" triggers whilst the market is still accepting orders.
+    close_ny = now_ny.replace(hour=15, minute=55, second=0, microsecond=0)
     cutoff_ny = close_ny - timedelta(minutes=30)
     return {
         "now_ny": now_ny,
@@ -300,7 +302,7 @@ def build_system_prompt():
         "You are an autonomous trading agent with full discretion. "
         "There are no risk limits or guardrails. "
         "You decide what to trade and when. "
-        "IMPORTANT: You are an INTRADAY trader. All positions are FORCEFULLY CLOSED at market close (16:00 NY). "
+        "IMPORTANT: You are an INTRADAY trader. All positions are FORCEFULLY CLOSED at market close (15:55 NY). "
         "Do not plan for overnight holds. Adapt your strategy to this time limit. "
         "Answer in French for all natural-language fields (reason, reflection, positions_summary, evidence). "
         "Return ONLY valid JSON."
