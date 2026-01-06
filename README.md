@@ -1,6 +1,6 @@
 # Grok-Agentic-Trader
 
-Autonomous Grok-powered trading bot (paper trading) with a lightweight real-time UI.
+Autonomous Grok-powered trading bot (Day Trader) that integrates with **Alpaca Markets** for real and paper trading.
 
 ## How it works
 
@@ -11,17 +11,17 @@ flowchart TD
   B -->|Out of session| H[Auto HOLD and logs]
   C --> D[LLM decision: Grok]
   D --> E{BUY / SELL / HOLD}
-  E -->|Trade| F[Paper broker]
+  E -->|Trade| F[Alpaca / Paper broker]
   F --> G[Portfolio state]
   E -->|Hold| G
   G --> I[Dashboard JSON]
   I --> J[UI realtime]
   D --> K[Decision log]
   F --> K
-  L[Price loop] --> I
+  L[Price loop (10s)] --> I
 ```
 
-## Quickstart (Linux)
+## Quickstart
 
 1) Create venv + install deps:
 ```bash
@@ -30,10 +30,10 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2) Add your API key:
+2) Configure API keys:
 ```bash
 cp .env.example .env
-# then edit .env
+# Edit .env with your Grok API Key and Alpaca API Keys
 ```
 
 3) Run bot + UI:
@@ -41,113 +41,35 @@ cp .env.example .env
 ./scripts/run_live.sh
 ```
 
-4) Open the UI:
-```
-http://localhost:8000
-```
+4) Open the UI: `http://localhost:8000`
 
-5) Stop:
-Press `CTRL+C` in the same terminal.
+## Features & Rules
 
-## VPS (tmux)
+- **Broker**: Fully integrated with **Alpaca Markets** (Paper or Live).
+- **Intraday Only**: 
+  - Trades only during NYSE hours (15:30 - 22:00 FR / 09:30 - 16:00 NY).
+  - **Force Close**: All positions are automatically liquidated at 22:00 FR (16:00 NY). No overnight risk.
+- **Safety First**:
+  - **Stop Loss (SL)**: MANDATORY for every BUY. Auto-managed.
+  - **Take Profit (TP)**: Optional (can be null for unrestricted gains).
+- **Assets**: US-listed Equities only (No Crypto, No FX).
+- **Auto-Sync**: On a fresh start (empty `data/` folder), the bot automatically syncs its starting cash with your Alpaca balance for correct PnL tracking.
 
-Run in a tmux session so it keeps running after you close VSCode/SSH:
+## Configuration (`config/settings.json`)
 
-```bash
-tmux new -s grok
-./scripts/run_live.sh
-```
+- **trading.broker**: `"alpaca"` (Recommended) or `"paper"`.
+- **trading.starting_cash**: Auto-updated from Alpaca on reset.
+- **live_search**: Enable/Disable Grok's web browsing capability.
 
-Detach (leave it running):
-```
-Ctrl+b, then d
-```
+## Resetting for a Fresh Start
 
-Re-attach:
-```bash
-tmux attach -t grok
-```
+To reset the bot (e.g., when switching from Paper to Live or adding funds):
+1. Stop the bot (`Ctrl+C`).
+2. Delete the local data: `rm -rf data/*`.
+3. Restart: `./scripts/run_live.sh`.
 
-Stop:
-Press `CTRL+C` inside tmux.
-
-Live logs:
-```bash
-tail -f data/run.log
-```
-
-## Live UI
-
-The UI auto-refreshes and reads `data/dashboard.json`.
-Open `http://localhost:8000` after starting `./scripts/run_live.sh`.
-
-## Trading rules (current behavior)
-
-- US-listed equities only (crypto/FX blocked).
-- New York session only (auto-handles DST; shown in Paris time).
-- No new positions 30 minutes before NY close.
-- All open positions are closed at NY close (22:00 FR).
-- No trading on weekends.
-- BUY requires both SL/TP; Grok can adjust SL/TP via HOLD.
-- Decision loop runs every `cycle_minutes` (default 30 min).
-
-## What the AI does
-
-Each cycle (during NY session), Grok receives:
-- Portfolio state (cash, open positions, SL/TP, PnL).
-- Market snapshot from yfinance.
-- Live search context (latest market news/sentiment).
-- Recent events and decision memory.
-
-Then it returns a single JSON decision:
-- `action`: BUY / SELL / HOLD.
-- `symbol`: US-listed ticker to trade.
-- `notional`: amount to allocate.
-- `sl_price` / `tp_price`: mandatory for BUY.
-- `reason`, `reflection`, `evidence`: French explanation of its choice.
-
-The AI can also:
-- Choose HOLD when there is no high‑conviction setup (no forced trades).
-- Adjust SL/TP on existing positions via HOLD.
-
-## Live search and cost control
-
-You can keep live search on while limiting costs:
-- `live_search.max_queries_per_run`: limit queries per cycle
-- `live_search.cooldown_minutes`: reuse cached results for this long
-- `live_search.max_sources`: sources per query (each source is billed)
-
-## Live Search (optional)
-
-The bot can optionally call xAI live search to pull recent market context.
-
-1) Enable in `config/settings.json`:
-```json
-\"live_search\": { \"enabled\": true }
-```
-
-2) Install the SDK:
-```bash
-pip install -r requirements.txt
-```
-
-Note: live search uses extra paid sources. You are billed by xAI for live search usage.
-
-## Config
-
-- `config/settings.json`: model, base_url, trade mode (paper), and risk flags.
-- `config/settings.json` also controls `starting_cash` if no state exists yet.
-- Runtime data is stored in `data/` (state, trades, dashboard), but it is ignored by git.
-
-## Notes
-
-- Prices come from Yahoo Finance via `yfinance`.
-- The bot chooses any US-listed ticker it wants (crypto/FX are blocked).
-- `scripts/run_live.sh` includes a lockfile to prevent multiple loops and avoid extra API costs.
-- If the UI shows "Decision invalide", inspect the raw model output in `data/trades.jsonl`.
-- Text logs are written to `data/run.log` for quick inspection without the UI.
-  - Live tail: `tail -f data/run.log`
+The bot will detect the fresh start and align itself with your Alpaca account balance.
 
 ## Disclaimer
 
-Educational use only. Not financial advice.
+Educational use only. Not financial advice. Use at your own risk.

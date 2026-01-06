@@ -15,6 +15,8 @@ from live_search import LiveSearchUnavailable, fetch_live_context
 from live_search_cache import is_cache_fresh, read_cache, write_cache
 from market import get_last_price
 from state import Portfolio
+from alpaca_broker import AlpacaBroker
+import os
 
 
 def load_recent_events(path, limit=5):
@@ -298,6 +300,8 @@ def build_system_prompt():
         "You are an autonomous trading agent with full discretion. "
         "There are no risk limits or guardrails. "
         "You decide what to trade and when. "
+        "IMPORTANT: You are an INTRADAY trader. All positions are FORCEFULLY CLOSED at market close (16:00 NY). "
+        "Do not plan for overnight holds. Adapt your strategy to this time limit. "
         "Answer in French for all natural-language fields (reason, reflection, positions_summary, evidence). "
         "Return ONLY valid JSON."
     )
@@ -337,10 +341,10 @@ def build_user_prompt(
         f"Allowed symbols: {', '.join(allowed_symbols) if allowed_symbols else 'any'}.\n"
         f"Symbol rules: {symbol_rules or 'none'}.\n"
         "Decide your next action using the allowed symbols and symbol rules only.\n"
-        "If there is no high-conviction opportunity, choose HOLD and do not force a trade.\n"
-        "On BUY you must set both sl_price and tp_price for the chosen symbol.\n"
-        "To adjust SL/TP without trading, use action HOLD with symbol and new sl_price/tp_price.\n"
-        "If no SL/TP change is needed, set sl_price and tp_price to null.\n"
+        "If there is no high-conviction opportunity, choose HOLD and do not force a trade.\\n"
+        "On BUY you MUST set sl_price (Safety). tp_price is optional (can be null for unrestricted upside).\\n"
+        "To adjust SL/TP without trading, use action HOLD with symbol and new sl_price/tp_price.\\n"
+        "If no SL/TP change is needed, set sl_price and tp_price to null.\\n"
         "All free-text fields must be in French: reason, reflection, positions_summary, evidence.\n"
         f"Set next_check_minutes to {fixed_minutes} (system uses a fixed schedule).\n"
         "You must set positions_ack to OPEN if there are open positions, otherwise NONE. "
@@ -411,10 +415,8 @@ def request_decision(
     if not decision.get("positions_summary"):
         decision["positions_summary"] = positions_summary_default
         corrected = True
-    if decision.get("action") == "BUY" and (
-        decision.get("sl_price") is None or decision.get("tp_price") is None
-    ):
-        message = "sl_price and tp_price are required for BUY"
+    if decision.get("action") == "BUY" and decision.get("sl_price") is None:
+        message = "sl_price is required for BUY (Safety First)"
         append_event(
             trades_path,
             {
@@ -501,16 +503,50 @@ def main():
     trades_path = config["paths"]["trades_path"]
     dashboard_path = config["paths"]["dashboard_path"]
     run_log_path = config["paths"].get("run_log_path")
+    
+    # Init Broker
+    broker_type = config["trading"].get("broker", "paper")
+    alpaca_broker = None
+    if broker_type == "alpaca":
+        api_key = os.getenv("ALPACA_API_KEY")
+        secret_key = os.getenv("ALPACA_SECRET_KEY")
+        endpoint = os.getenv("ALPACA_ENDPOINT", "https://paper-api.alpaca.markets")
+        paper_mode = "paper" in endpoint
+        if not api_key or not secret_key:
+             raise ValueError("Alpaca broker selected but keys missing in .env")
+        alpaca_broker = AlpacaBroker(api_key, secret_key, paper=paper_mode)
+
     allowed_symbols = [symbol.upper() for symbol in config["trading"].get("universe", [])]
     watchlist_symbols = config["trading"].get("watchlist", []) or allowed_symbols
     watchlist_symbols = [symbol.upper() for symbol in watchlist_symbols]
     symbol_rules = config["trading"].get("symbol_rules")
+
+    # Check if fresh start
+    is_fresh_start = not os.path.exists(state_path)
 
     portfolio = Portfolio.load(
         state_path,
         starting_cash=config["trading"]["starting_cash"],
         currency=config["trading"]["currency"],
     )
+
+    if alpaca_broker:
+        portfolio = alpaca_broker.sync_portfolio(portfolio)
+        
+        # AUTO-UPDATE CONFIG IF FRESH START
+        # If we have no history, we align the "starting point" with reality to have clean PnL
+        if is_fresh_start and abs(portfolio.cash - config["trading"]["starting_cash"]) > 0.01:
+            print(f"✨ First Run Auto-Config: Updating starting_cash from {config['trading']['starting_cash']} to {portfolio.cash}")
+            config["trading"]["starting_cash"] = portfolio.cash
+            
+            # Save to settings.json
+            try:
+                with open("config/settings.json", "w") as f:
+                    json.dump(config, f, indent=2)
+            except Exception as e:
+                print(f"⚠️ Failed to auto-update settings.json: {e}")
+
+        portfolio.save(state_path)
 
     last_equity_events = load_last_events_by_type(trades_path, "equity", limit=1)
     last_equity = last_equity_events[0] if last_equity_events else None
@@ -536,10 +572,19 @@ def main():
             allow_negative_cash=config["trading"]["allow_negative_cash"],
             allow_short=config["trading"]["allow_short"],
         )
+        if alpaca_broker:
+             # For auto-exit, we use the abstract execute method or specific logic?
+             # Auto-exits in main.py loops through triggers and calls execute.
+             # We can make `broker` variable point to alpaca_broker wrapper.
+             pass
+        
+        # Abstract broker interface for exit loop
+        active_broker = alpaca_broker if alpaca_broker else broker
+        
         last_trade = None
         for trigger in exit_triggers:
             notional = trigger["qty"] * trigger["price"]
-            result = broker.execute(
+            result = active_broker.execute(
                 action="SELL",
                 symbol=trigger["symbol"],
                 notional=notional,
@@ -576,6 +621,10 @@ def main():
                 },
             )
             log_trade(run_log_path, result, reason="AUTO_EXIT")
+        
+        if alpaca_broker:
+            portfolio = alpaca_broker.sync_portfolio(portfolio)
+            
         portfolio.save(state_path)
         market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
         equity = market_snapshot["equity"]
@@ -637,9 +686,17 @@ def main():
             allow_negative_cash=config["trading"]["allow_negative_cash"],
             allow_short=config["trading"]["allow_short"],
         )
-        reason = "SESSION_CLOSE"
-        last_trade = close_all_positions(portfolio, broker, trades_path, reason)
-        log_trade(run_log_path, last_trade, reason=reason)
+        active_broker = alpaca_broker if alpaca_broker else broker
+        
+        if alpaca_broker:
+             alpaca_broker.close_all_positions()
+             last_trade = None
+             portfolio = alpaca_broker.sync_portfolio(portfolio)
+        else:
+             reason = "SESSION_CLOSE"
+             last_trade = close_all_positions(portfolio, broker, trades_path, reason)
+             log_trade(run_log_path, last_trade, reason=reason)
+        
         portfolio.save(state_path)
         market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
         equity = market_snapshot["equity"]
@@ -767,7 +824,7 @@ def main():
             positions_open,
             positions_summary_default,
             fixed_next_minutes,
-            reflection=positions_summary_default,
+            reflection="En attente de l'ouverture du marché (15h30).",
         )
         log_decision(run_log_path, decision, note="OUT_OF_SESSION")
         append_event(
@@ -1011,8 +1068,9 @@ def main():
         allow_negative_cash=config["trading"]["allow_negative_cash"],
         allow_short=config["trading"]["allow_short"],
     )
+    active_broker = alpaca_broker if alpaca_broker else broker
 
-    result = broker.execute(
+    result = active_broker.execute(
         action=decision["action"],
         symbol=symbol,
         notional=notional,
@@ -1021,6 +1079,9 @@ def main():
         sl_price=decision.get("sl_price"),
         tp_price=decision.get("tp_price"),
     )
+    
+    if alpaca_broker:
+        portfolio = alpaca_broker.sync_portfolio(portfolio)
     log_trade(run_log_path, result, reason=decision.get("reason"))
 
     portfolio.save(state_path)

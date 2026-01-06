@@ -145,7 +145,8 @@ env.bak/
 venv.bak/
 
 # Runtime data
-data/
+data/*
+!data/.gitkeep
 
 # Spyder project settings
 .spyderproject
