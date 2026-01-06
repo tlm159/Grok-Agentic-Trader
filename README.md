@@ -18,7 +18,7 @@ flowchart TD
   I --> J[UI realtime]
   D --> K[Decision log]
   F --> K
-  L[Price loop (10s)] --> I
+  L["Price loop (10s)"] --> I
 ```
 
 ## Quickstart
@@ -42,6 +42,33 @@ cp .env.example .env
 ```
 
 4) Open the UI: `http://localhost:8000`
+
+## VPS (tmux)
+
+Run in a tmux session so it keeps running after you close VSCode/SSH:
+
+```bash
+tmux new -s grok
+./scripts/run_live.sh
+```
+
+Detach (leave it running):
+```
+Ctrl+b, then d
+```
+
+Re-attach:
+```bash
+tmux attach -t grok
+```
+
+Stop:
+Press `CTRL+C` inside tmux.
+
+Live logs:
+```bash
+tail -f data/run.log
+```
 
 ## Features & Rules
 
