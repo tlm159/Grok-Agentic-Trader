@@ -80,6 +80,10 @@ class AlpacaBroker:
         
         # Prepare order data
         # Alpaca allows notional orders for fractional shares
+        # FIX: Round notional to 2 decimals to avoid "notional value must be limited to 2 decimal places"
+        if notional is not None:
+            notional = round(notional, 2)
+            
         req = MarketOrderRequest(
             symbol=symbol,
             notional=notional if side == OrderSide.BUY else None,
