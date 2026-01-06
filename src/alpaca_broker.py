@@ -17,10 +17,13 @@ class AlpacaBroker:
         Updates cash and positions.
         """
         try:
-            # Sync Cash
+            # Sync Cash & Equity
             account = self.client.get_account()
-            portfolio.cash = float(account.cash)
+            # CRITICAL: Use buying_power, not cash. 'cash' might be unsettled or locked.
+            # buying_power is what we actually have available to spend right now.
+            portfolio.cash = float(account.buying_power)
             portfolio.currency = account.currency
+            portfolio.equity = float(account.equity)
 
             # Sync Positions
             alpaca_positions = self.client.get_all_positions()

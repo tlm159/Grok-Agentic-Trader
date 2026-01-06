@@ -88,7 +88,14 @@ def build_market_snapshot(portfolio, watchlist=None):
             "pnl_pct": pnl_pct,
         }
         positions_value += value
-    equity = portfolio.cash + positions_value
+        positions_value += value
+    
+    # Use Broker-reported equity if available (e.g. from Alpaca), otherwise calculate estimate
+    if portfolio.equity is not None:
+         equity = portfolio.equity
+    else:
+         equity = portfolio.cash + positions_value
+         
     leverage = None
     cash_ratio = None
     if equity > 0:

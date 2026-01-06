@@ -8,6 +8,7 @@ class Portfolio:
     cash: float
     currency: str
     positions: dict = field(default_factory=dict)
+    equity: float = None
 
     @staticmethod
     def _coerce_float(value, default):
