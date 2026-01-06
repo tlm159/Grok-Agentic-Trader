@@ -63,15 +63,35 @@ def build_market_snapshot(portfolio, watchlist=None):
         sl_price = normalized.get("sl")
         tp_price = normalized.get("tp")
         avg_entry = normalized.get("avg_entry")
-        price = get_last_price(symbol)
+        # Use trusted price from Alpaca if available, else fetch
+        cached_price = normalized.get("current_price")
+        if cached_price is not None:
+             price = cached_price
+             price_by_symbol[symbol] = price
+        else:
+             price = get_last_price(symbol)
+             price_by_symbol[symbol] = price
+
         if price is None:
             continue
-        price_by_symbol[symbol] = price
+            
         value = qty * price
         gross_exposure += abs(value)
+        
         pnl = None
         pnl_pct = None
-        if avg_entry is not None:
+        
+        # Use trusted PnL from Alpaca if available
+        cached_pnl = normalized.get("unrealized_pl")
+        
+        if cached_pnl is not None:
+             pnl = cached_pnl
+             # Recalculate pct for display consistency
+             basis = abs(float(avg_entry or price) * qty)
+             if basis > 0:
+                  pnl_pct = (pnl / basis) * 100
+             open_pnl += pnl
+        elif avg_entry is not None:
             pnl = (price - float(avg_entry)) * qty
             basis = abs(float(avg_entry) * qty)
             if basis > 0:
@@ -87,7 +107,6 @@ def build_market_snapshot(portfolio, watchlist=None):
             "pnl": pnl,
             "pnl_pct": pnl_pct,
         }
-        positions_value += value
         positions_value += value
     
     # Use Broker-reported equity if available (e.g. from Alpaca), otherwise calculate estimate
@@ -331,6 +350,7 @@ def build_user_prompt(
     return (
         "Portfolio:\n"
         f"Cash: {portfolio.cash} {portfolio.currency}\n"
+        f"Buying Power: {getattr(portfolio, 'buying_power', portfolio.cash)} {portfolio.currency}\n"
         f"Positions: {json.dumps(portfolio.positions)}\n\n"
         "Market snapshot:\n"
         f"{json.dumps(market_snapshot)}\n\n"

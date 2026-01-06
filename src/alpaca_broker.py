@@ -19,9 +19,9 @@ class AlpacaBroker:
         try:
             # Sync Cash & Equity
             account = self.client.get_account()
-            # CRITICAL: Use buying_power, not cash. 'cash' might be unsettled or locked.
-            # buying_power is what we actually have available to spend right now.
-            portfolio.cash = float(account.buying_power)
+            # CRITICAL: Distinguish Cash (Net Value) from Buying Power (Trading limit)
+            portfolio.cash = float(account.cash)
+            portfolio.buying_power = float(account.buying_power)
             portfolio.currency = account.currency
             portfolio.equity = float(account.equity)
 
@@ -34,6 +34,8 @@ class AlpacaBroker:
                 qty = float(p.qty)
                 market_value = float(p.market_value)
                 avg_entry = float(p.avg_entry_price)
+                current_price = float(p.current_price)
+                unrealized_pl = float(p.unrealized_pl)
                 
                 # Retrieve existing SL/TP from local state if available (Alpaca doesn't easily expose attached orders on position view)
                 # For now, we keep existing SL/TP if symbol matches, or init to None
@@ -48,7 +50,9 @@ class AlpacaBroker:
                     "qty": qty,
                     "sl": existing_sl,
                     "tp": existing_tp,
-                    "avg_entry": avg_entry
+                    "avg_entry": avg_entry,
+                    "current_price": current_price,
+                    "unrealized_pl": unrealized_pl
                 }
             
             portfolio.positions = new_positions
