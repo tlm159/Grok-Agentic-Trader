@@ -30,7 +30,7 @@
     "default_sl_pct": null,
     "default_tp_pct": null,
     "universe": [],
-    "watchlist": ["NVDA", "TSLA", "AAPL", "MSFT", "AMD", "INTC", "PLTR", "COIN", "MSTR", "SPY", "QQQ", "AMZN", "GOOGL", "META"],
+    "watchlist": [],
     "symbol_rules": "US-listed equities only (no crypto or FX pairs).",
     "allow_negative_cash": true,
     "allow_short": true,
