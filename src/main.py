@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -326,10 +327,16 @@ def close_all_positions(portfolio, broker, trades_path, reason):
 def build_system_prompt():
     return (
         "You are an autonomous trading agent with full discretion. "
-        "There are no risk limits or guardrails. "
-        "You decide what to trade and when. "
+        "We are trading on ALPACA MARKETS (Fractional shares allowed). "
+        "YOUR GOAL IS TO MAKE MONEY, but act with intelligence. Do not gamble. "
+        "Hunt for 'Gems' (high conviction, asymmetric opportunities). "
+        "You decide what to trade and when. Calculate your own SL and TP based on volatility and conviction. "
         "IMPORTANT: You are an INTRADAY trader. All positions are FORCEFULLY CLOSED at market close (15:55 NY). "
         "Do not plan for overnight holds. Adapt your strategy to this time limit. "
+        "NEW CAPABILITY: You have DYNAMIC VISION. We automatically fetch prices for any ticker found in the news. "
+        "If you see a ticker in 'Live context', check 'Market snapshot' -> 'watchlist_prices'. "
+        "If the price is there, you CAN trade it. You are NOT restricted to a fixed watchlist. "
+        "Hunt for opportunities across the entire market based on the news. "
         "Answer in French for all natural-language fields (reason, reflection, positions_summary, evidence). "
         "Return ONLY valid JSON."
     )
@@ -916,6 +923,27 @@ def main():
                     append_event(
                         trades_path, {"type": "live_search_error", "message": str(exc)}
                     )
+
+    # DYNAMIC WATCHLIST: Extract tickers from news to fetch their prices
+    if live_context and live_context != "none":
+        # Rough regex for tickers (2-5 uppercase letters)
+        potential_tickers = set(re.findall(r'\b[A-Z]{2,5}\b', live_context))
+        # Basic stopwords to avoid fetching price for "THE", "AND", etc.
+        stopwords = {"THE", "AND", "FOR", "THAT", "WITH", "THIS", "FROM", "HAVE", "ARE", "NOT", "BUT", "ALL", "WHO", "WHAT", "WHEN", "WHERE", "WHY", "HOW", "CAN", "YOU", "YOUR", "THEY", "THEIR", "OUR", "WE", "SHE", "HE", "IT", "IS", "AM", "ARE", "WAS", "WERE", "BE", "BEEN", "BEING", "HAS", "HAD", "DO", "DOES", "DID", "JONES", "DOW", "NASDAQ", "NYSE", "AMEX", "ETF", "USD", "EUR", "GBP", "AUD", "CAD", "JPY", "CNY", "HKD", "CHF", "SEK", "NZD", "KRW", "SGD", "NOK", "MXN", "INR", "RUB", "ZAR", "TRY", "BRL", "TWD", "DKK", "PLN", "THB", "IDR", "HUF", "CZK", "ILS", "CLP", "PHP", "AED", "COP", "SAR", "MYR", "RON"}
+        
+        dynamic_tickers = [t for t in potential_tickers if t not in stopwords]
+        
+        if dynamic_tickers:
+            # Append to watchlist (deduplicated)
+            old_count = len(watchlist_symbols)
+            watchlist_symbols = list(set(watchlist_symbols + dynamic_tickers))
+            new_count = len(watchlist_symbols)
+            
+            if new_count > old_count:
+                # RE-BUILD Snapshot to fetch prices for these new tickers
+                append_event(trades_path, {"type": "dynamic_watchlist", "added": dynamic_tickers})
+                market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
+                equity = market_snapshot["equity"]
 
     recent_events = load_recent_events(trades_path, limit=5)
     system_prompt = build_system_prompt()
