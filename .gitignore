@@ -147,6 +147,7 @@ venv.bak/
 # Runtime data
 data/*
 !data/.gitkeep
+ui/simple/data/
 
 # Spyder project settings
 .spyderproject
