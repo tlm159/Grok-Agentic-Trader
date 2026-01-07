@@ -70,7 +70,19 @@ Live logs:
 tail -f data/run.log
 ```
 
-## Features & Rules
+73: ## Security (CRITICAL for VPS)
+74: 
+75: If running on a public VPS, your dashboard (port 8000) is visible to the entire internet.
+76: 
+77: **Action Required:**
+78: 1.  Use the `run_live.sh` script (it secures the server by hiding your `.env` file).
+79: 2.  **Configure your VPS Firewall** (Hetzner/AWS/DigitalOcean) to restrict Port 8000 access:
+80:     *   **Allow**: TCP 8000 from `YOUR_HOME_IP/32` ONLY.
+81:     *   **Deny**: TCP 8000 from `0.0.0.0/0` (Anywhere else).
+82: 
+83: This prevents unauthorized access to your dashboard and potential data theft.
+84: 
+85: ## Features & Rules
 
 - **Broker**: Fully integrated with **Alpaca Markets** (Paper or Live).
 - **Intraday Only**: 

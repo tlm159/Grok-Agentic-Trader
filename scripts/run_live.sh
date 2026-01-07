@@ -25,4 +25,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python3 -m http.server 8000
+# Security: Serve ONLY the UI folder, not the root
+# Link data folder so UI can access it
+mkdir -p ui/simple/data
+# Remove potential existing symlink to avoid recursive mess if run multiple times
+rm -f ui/simple/data/dashboard.json
+ln -s ../../../data/dashboard.json ui/simple/data/dashboard.json
+
+cd ui/simple && python3 -m http.server 8000
