@@ -359,7 +359,8 @@ def build_system_prompt():
         "  \"tp_price\": 105.00, \n"
         "  \"evidence\": [\"News source\", \"ATR value\"] \n"
         "} \n"
-        "Note: 'SELL' is ONLY for closing existing Long positions. To open a trade, use 'BUY'."
+        "Note: 'SELL' is ONLY for closing existing Long positions. To open a trade, use 'BUY'.\n"
+        "To adjust SL/TP without trading, use action 'HOLD' with the symbol and the new 'sl_price'."
     )
 
 
