@@ -34,7 +34,6 @@
     "symbol_rules": "US-listed equities only (no crypto or FX pairs).",
     "allow_negative_cash": true,
     "allow_short": false,
-    "risk_per_trade_pct": 0.02,
     "universe_mode": "llm_any",
     "max_positions": null,
     "max_trades_per_day": null,
