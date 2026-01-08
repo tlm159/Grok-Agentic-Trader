@@ -60,7 +60,10 @@ def parse_optional_price(value, label):
     if value is None:
         return None
     price = float(value)
-    if price <= 0:
+    # FIX: Treat 0 as "no price set" (common LLM behavior for HOLD)
+    if price == 0:
+        return None
+    if price < 0:
         raise ValueError(f"{label} must be positive")
     return price
 
