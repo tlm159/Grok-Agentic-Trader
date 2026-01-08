@@ -336,7 +336,7 @@ def build_system_prompt():
         "   - Positive News + Bullish Price = BUY Signal.\n"
         "   - Ambiguous Data = HOLD Signal.\n"
         "3. RISK COMPUTATION: Calculate Position Size based on conviction and Volatility (ATR).\n"
-        "   - YOU have full authority over position sizing.\n"
+        "   - YOU have full authority over position sizing. You may split capital across multiple assets (Diversification).\n"
         "   - MANDATORY: Define Stop Loss (SL) based on ATR (e.g., Price - 1.5 * ATR).\n"
         "4. EXECUTION: Generate JSON Order.\n"
         "\n"
