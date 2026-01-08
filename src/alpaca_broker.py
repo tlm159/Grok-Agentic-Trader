@@ -83,7 +83,19 @@ class AlpacaBroker:
             timestamp = datetime.now(timezone.utc).isoformat()
             return TradeResult("HOLD", symbol, 0, price, 0, timestamp)
 
-        side = OrderSide.BUY if action.upper() == "BUY" else OrderSide.SELL
+        if action.upper() == "SELL":
+            # SAFETY GUARD: Prevent opening Short positions if logic fails
+            # We must check if we have a position.
+            # portfolio is passed to execute.
+            if symbol not in portfolio.positions:
+                # Log warning and return fake result or raise Error
+                print(f"⚠️ SAFETY: Blocked SELL on {symbol} (No Position). Preventing Accidental Short.")
+                timestamp = datetime.now(timezone.utc).isoformat()
+                return TradeResult("BLOCKED", symbol, 0, price, 0, timestamp)
+
+            side = OrderSide.SELL
+        else:
+            side = OrderSide.BUY
         
         # Prepare order data
         # Alpaca allows notional orders for fractional shares
