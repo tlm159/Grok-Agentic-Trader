@@ -65,9 +65,9 @@ def parse_optional_price(value, label):
     return price
 
 
-def parse_optional_minutes(value):
+def parse_optional_minutes(value, default=30):
     if value is None:
-        raise ValueError("next_check_minutes is required")
+        return default  # Use system default (30 min)
     minutes = float(value)
     if minutes <= 0:
         raise ValueError("next_check_minutes must be positive")
