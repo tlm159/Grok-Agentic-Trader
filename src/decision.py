@@ -88,9 +88,9 @@ def parse_decision(text):
     sl_price = parse_optional_price(data.get("sl_price"), "sl_price")
     tp_price = parse_optional_price(data.get("tp_price"), "tp_price")
     next_check_minutes = parse_optional_minutes(data.get("next_check_minutes"))
-    positions_ack = str(data.get("positions_ack", "")).upper()
-    if positions_ack not in {"OPEN", "NONE"}:
-        raise ValueError("positions_ack must be OPEN or NONE")
+    
+    # Optional legacy fields (relaxed for V2)
+    positions_ack = str(data.get("positions_ack", "NONE")).upper()
     positions_summary = str(data.get("positions_summary", ""))
     evidence = data.get("evidence", [])
     if not isinstance(evidence, list):
