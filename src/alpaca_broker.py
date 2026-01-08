@@ -117,12 +117,23 @@ class AlpacaBroker:
         # If SELL, usually we want to close a qty. `notional` passed here is target value. 
         # If we want to support fractional sell by value, we can pass notional.
         if side == OrderSide.SELL:
-            req = MarketOrderRequest(
-                symbol=symbol,
-                notional=notional,
-                side=side,
-                time_in_force=TimeInForce.DAY
-            )
+            # FIX: Use close_position for SELL to avoid "insufficient qty" errors due to fractional rounding 
+            # or price fluctuations when using 'notional'.
+            # Assumes we want to close the ENTIRE position.
+            try:
+                self.client.close_position(symbol_or_asset_id=symbol)
+                timestamp = datetime.now(timezone.utc).isoformat()
+                return TradeResult(
+                    action="SELL",
+                    symbol=symbol,
+                    qty=0, # Unknown until fill, simplified
+                    price=price,
+                    notional=notional,
+                    timestamp=timestamp
+                )
+            except Exception as e:
+                # Fallback if close_position fails (e.g. 404/no pos) or partial logic needed later
+                raise RuntimeError(f"Alpaca Close Failed: {e}")
 
         try:
             order = self.client.submit_order(order_data=req)
