@@ -66,12 +66,8 @@ def parse_optional_price(value, label):
 
 
 def parse_optional_minutes(value, default=30):
-    if value is None:
-        return default  # Use system default (30 min)
-    minutes = float(value)
-    if minutes <= 0:
-        raise ValueError("next_check_minutes must be positive")
-    return minutes
+    # COST CONTROL: Always use fixed 30 min cycle, ignore LLM value
+    return default
 
 
 def parse_decision(text):
