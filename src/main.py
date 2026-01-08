@@ -343,6 +343,7 @@ def build_system_prompt():
         "\n"
         "CONSTRAINTS (Technical & Hard):\n"
         "- UNIVERSE: You are authorized to trade ANY US-listed ticker found in 'Live context'. You are NOT restricted to a fixed watchlist.\n"
+        "- CRYPTO BAN: Do NOT trade cryptocurrencies (BTC, ETH, XRP, SOL, etc.). US Equities ONLY.\n"
         "- SHORT SELLING: DISABLED (Technical limitation). Do NOT attempt to Short.\n"
         "- TIME LIMIT: All positions forcefully closed at 15:55 NY. No overnight holds.\n"
         "- HALLUCINATIONS: You must NOT invent prices or ATR. Use only provided data.\n"
@@ -931,10 +932,12 @@ def main():
     if live_context and live_context != "none":
         # Rough regex for tickers (2-5 uppercase letters)
         potential_tickers = set(re.findall(r'\b[A-Z]{2,5}\b', live_context))
-        # Basic stopwords to avoid fetching price for "THE", "AND", etc.
+        # Stopwords: common English words + indices + currencies
         stopwords = {"THE", "AND", "FOR", "THAT", "WITH", "THIS", "FROM", "HAVE", "ARE", "NOT", "BUT", "ALL", "WHO", "WHAT", "WHEN", "WHERE", "WHY", "HOW", "CAN", "YOU", "YOUR", "THEY", "THEIR", "OUR", "WE", "SHE", "HE", "IT", "IS", "AM", "ARE", "WAS", "WERE", "BE", "BEEN", "BEING", "HAS", "HAD", "DO", "DOES", "DID", "JONES", "DOW", "NASDAQ", "NYSE", "AMEX", "ETF", "USD", "EUR", "GBP", "AUD", "CAD", "JPY", "CNY", "HKD", "CHF", "SEK", "NZD", "KRW", "SGD", "NOK", "MXN", "INR", "RUB", "ZAR", "TRY", "BRL", "TWD", "DKK", "PLN", "THB", "IDR", "HUF", "CZK", "ILS", "CLP", "PHP", "AED", "COP", "SAR", "MYR", "RON"}
+        # Crypto blocklist: NOT US equities
+        crypto_blocklist = {"BTC", "ETH", "XRP", "BNB", "SOL", "ADA", "DOGE", "DOT", "AVAX", "SHIB", "MATIC", "LTC", "TRX", "LINK", "XLM", "ATOM", "UNI", "ETC", "XMR", "BCH", "FIL", "APT", "NEAR", "VET", "ICP", "QNT", "AAVE", "GRT", "ALGO", "EOS", "THETA", "SAND", "MANA", "AXS", "FTM", "RUNE", "ZEC", "EGLD", "XTZ", "FLOW", "NEO", "MKR", "KAVA", "SNX", "CHZ", "ENJ", "CRV", "LDO", "IMX", "APE", "RPL", "GMX", "STX", "OSMO", "PEPE", "WIF", "BONK", "FLOKI", "ARB", "OP", "SUI", "SEI", "TIA", "JUP", "PYTH", "RNDR", "FET", "TAO", "USDT", "USDC", "DAI", "BUSD", "TUSD", "CNBC", "US", "UK", "EU", "FED", "CEO", "CFO", "CTO", "IPO", "SEC", "FDA", "GDP", "CPI", "PPI", "PMI", "NFT", "DCA", "ATH", "ATL", "ROI", "APY", "APR", "ICO", "IEO", "IDO", "DAO", "DEX", "CEX", "AMM", "TVL", "HODL", "FOMO", "FUD"}
         
-        dynamic_tickers = [t for t in potential_tickers if t not in stopwords]
+        dynamic_tickers = [t for t in potential_tickers if t not in stopwords and t not in crypto_blocklist]
         
         if dynamic_tickers:
             # Append to watchlist (deduplicated)
