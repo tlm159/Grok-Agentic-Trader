@@ -34,6 +34,7 @@ def load_decision_history(trades_path, limit=12):
     lines = log_path.read_text().splitlines()
     history = []
     skip_next_parsed = False
+    seen = set()
     for line in reversed(lines):
         try:
             event = json.loads(line)
@@ -50,6 +51,13 @@ def load_decision_history(trades_path, limit=12):
         elif event_type not in {"decision_fallback", "decision_corrected"}:
             continue
         decision = event.get("decision", {})
+        
+        # Deduplication: Key based on timestamp, action, symbol
+        key = (event.get("timestamp"), decision.get("action"), decision.get("symbol"))
+        if key in seen:
+            continue
+        seen.add(key)
+
         history.append(
             {
                 "timestamp": event.get("timestamp"),
