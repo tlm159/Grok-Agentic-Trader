@@ -338,6 +338,7 @@ def build_system_prompt():
         "3. RISK COMPUTATION: Calculate Position Size based on conviction and Volatility (ATR).\n"
         "   - YOU have full authority over position sizing. You may split capital across multiple assets (Diversification).\n"
         "   - MANDATORY: Define Stop Loss (SL) based on ATR (e.g., Price - 1.5 * ATR).\n"
+        "   - EXIT AUTONOMY: You can SELL at any time (Profit Taking / Conviction Change). You are NOT bound to wait for SL/TP triggers.\n"
         "4. EXECUTION: Generate JSON Order.\n"
         "\n"
         "CONSTRAINTS (Technical & Hard):\n"
