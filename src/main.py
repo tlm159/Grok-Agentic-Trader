@@ -342,6 +342,7 @@ def build_system_prompt():
         "4. EXECUTION: Generate JSON Order.\n"
         "\n"
         "CONSTRAINTS (Technical & Hard):\n"
+        "- UNIVERSE: You are authorized to trade ANY US-listed ticker found in 'Live context'. You are NOT restricted to a fixed watchlist.\n"
         "- SHORT SELLING: DISABLED (Technical limitation). Do NOT attempt to Short.\n"
         "- TIME LIMIT: All positions forcefully closed at 15:55 NY. No overnight holds.\n"
         "- HALLUCINATIONS: You must NOT invent prices or ATR. Use only provided data.\n"
