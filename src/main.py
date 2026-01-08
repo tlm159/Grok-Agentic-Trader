@@ -360,7 +360,7 @@ def build_system_prompt():
         "  \"evidence\": [\"News source\", \"ATR value\"] \n"
         "} \n"
         "Note: 'SELL' is ONLY for closing existing Long positions. To open a trade, use 'BUY'.\n"
-        "To adjust SL/TP without trading, use action 'HOLD' with the symbol and the new 'sl_price'."
+        "OPTIONAL: To adjust SL/TP without trading (e.g. Trailing Stop), use action 'HOLD' with the symbol and the new 'sl_price'."
     )
 
 
