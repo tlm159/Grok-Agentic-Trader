@@ -48,7 +48,7 @@ def load_decision_history(trades_path, limit=12):
             if skip_next_parsed:
                 skip_next_parsed = False
                 continue
-        elif event_type not in {"decision_fallback", "decision_corrected"}:
+        elif event_type not in {"decision_fallback"}:
             continue
         decision = event.get("decision", {})
         
