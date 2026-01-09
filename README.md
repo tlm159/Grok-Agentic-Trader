@@ -28,7 +28,7 @@ flowchart TD
   F --> G[Portfolio state]
   E -->|Hold| G
   G --> I[Dashboard JSON]
-  I --> J[UI realtime (5s refresh)]
+  I --> J["UI realtime (5s refresh)"]
   D --> K[Decision log]
   F --> K
   K --> J
@@ -100,11 +100,11 @@ tmux new -s grok
 
 **Security Warning**: If running on a VPS, firewall port 8000 to YOUR IP only.
 
-- **Auto-Sync**: On a fresh start (empty `data/` folder), the bot automatically syncs its starting cash with your IBKR balance.
+- **Auto-Sync**: On a fresh start (empty `data/` folder), the bot automatically syncs its starting cash with your Alpaca balance.
 
 ## Configuration (`config/settings.json`)
 
-- **trading.starting_cash**: Auto-updated from IBKR on reset.
+- **trading.starting_cash**: Auto-updated from Alpaca on reset.
 - **live_search**: Enable/Disable Grok's web browsing capability.
 
 ## Resetting for a Fresh Start
@@ -114,7 +114,7 @@ To reset the bot (e.g., when switching from Paper to Live or adding funds):
 2. Delete the local data: `rm -rf data/*`.
 3. Restart: `./scripts/run_live.sh`.
 
-The bot will detect the fresh start and align itself with your IBKR account balance.
+The bot will detect the fresh start and align itself with your Alpaca account balance.
 
 ## Disclaimer
 
