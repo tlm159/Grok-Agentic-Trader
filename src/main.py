@@ -943,79 +943,90 @@ def main():
     fixed_next_minutes = config["trading"].get("cycle_minutes", 60)
 
     if session["after_close"] and positions_open and not session["is_weekend"]:
-        broker = PaperBroker(
-            allow_negative_cash=config["trading"]["allow_negative_cash"],
-            allow_short=config["trading"]["allow_short"],
-        )
-        active_broker = connected_broker if connected_broker else broker
+        # Try to close positions at session end
+        positions_before_close = list(portfolio.positions.keys())
         
         if connected_broker:
-             connected_broker.close_all_positions()
-             last_trade = None
-             portfolio = connected_broker.sync_portfolio(portfolio)
+            try:
+                connected_broker.close_all_positions()
+            except Exception as e:
+                print(f"⚠️ Session Close Error: {e}")
+            # Sync to see actual state
+            portfolio = connected_broker.sync_portfolio(portfolio)
         else:
-             reason = "SESSION_CLOSE"
-             last_trade = close_all_positions(portfolio, broker, trades_path, reason)
-             log_trade(run_log_path, last_trade, reason=reason)
+            broker = PaperBroker(
+                allow_negative_cash=config["trading"]["allow_negative_cash"],
+                allow_short=config["trading"]["allow_short"],
+            )
+            reason = "SESSION_CLOSE"
+            last_trade = close_all_positions(portfolio, broker, trades_path, reason)
+            if last_trade:
+                log_trade(run_log_path, last_trade, reason=reason)
         
         portfolio.save(state_path)
-        market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
-        equity = market_snapshot["equity"]
-        append_event(
-            trades_path,
-            {
-                "type": "equity",
-                "equity": equity,
-                "cash": portfolio.cash,
-                "positions_value": market_snapshot["positions_value"],
-            },
-        )
-        equity_series = load_equity_series(trades_path, limit=200)
-        decision = {
-            "action": "SELL",
-            "symbol": last_trade.symbol if last_trade else None,
-            "notional": last_trade.notional if last_trade else None,
-            "reason": "Clôture de session NY : positions fermées par sécurité.",
-            "confidence": None,
-            "reflection": "Clôture automatique à 22h (heure FR).",
-            "sl_price": None,
-            "tp_price": None,
-            "next_check_minutes": fixed_next_minutes,
-            "positions_ack": "NONE",
-            "positions_summary": "Aucune position ouverte.",
-            "evidence": [],
-        }
-        log_decision(run_log_path, decision, note="SESSION_CLOSE")
-        append_event(
-            trades_path, {"type": "decision_parsed", "decision": decision, "attempt": 0}
-        )
-        decision_history = load_decision_history(trades_path, limit=12)
-        dashboard_payload = build_dashboard_payload(
-            config=config,
-            portfolio=portfolio,
-            market_snapshot=market_snapshot,
-            equity=equity,
-            equity_delta=equity_delta,
-            decision=decision,
-            raw=None,
-            prompt=None,
-            trade={
-                "action": last_trade.action,
-                "symbol": last_trade.symbol,
-                "qty": last_trade.qty,
-                "price": last_trade.price,
-                "notional": last_trade.notional,
-                "timestamp": last_trade.timestamp,
+        
+        # Check if positions were actually closed
+        positions_after_close = list(portfolio.positions.keys())
+        actually_closed = len(positions_before_close) > len(positions_after_close)
+        
+        # Only log SELL decision if something was actually closed
+        if actually_closed or not connected_broker:
+            market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
+            equity = market_snapshot["equity"]
+            append_event(
+                trades_path,
+                {
+                    "type": "equity",
+                    "equity": equity,
+                    "cash": portfolio.cash,
+                    "positions_value": market_snapshot["positions_value"],
+                },
+            )
+            equity_series = load_equity_series(trades_path, limit=200)
+            
+            closed_symbols = [s for s in positions_before_close if s not in positions_after_close]
+            decision = {
+                "action": "SELL",
+                "symbol": closed_symbols[0] if closed_symbols else None,
+                "notional": None,
+                "reason": f"Clôture de session NY : {', '.join(closed_symbols) if closed_symbols else 'aucune'} fermées.",
+                "confidence": None,
+                "reflection": "Clôture automatique à 22h (heure FR).",
+                "sl_price": None,
+                "tp_price": None,
+                "next_check_minutes": fixed_next_minutes,
+                "positions_ack": "NONE" if not positions_after_close else "OPEN",
+                "positions_summary": build_positions_summary(portfolio),
+                "evidence": [],
             }
-            if last_trade
-            else None,
-            error=None,
-            equity_series=equity_series,
-            decision_history=decision_history,
-            broker_connected=connected_broker.is_connected() if connected_broker else None,
-        )
-        write_dashboard(dashboard_path, dashboard_payload)
-        return
+            log_decision(run_log_path, decision, note="SESSION_CLOSE")
+            append_event(
+                trades_path, {"type": "decision_parsed", "decision": decision, "attempt": 0}
+            )
+            decision_history = load_decision_history(trades_path, limit=12)
+            dashboard_payload = build_dashboard_payload(
+                config=config,
+                portfolio=portfolio,
+                market_snapshot=market_snapshot,
+                equity=equity,
+                equity_delta=equity_delta,
+                decision=decision,
+                raw=None,
+                prompt=None,
+                trade=None,
+                error=None,
+                equity_series=equity_series,
+                decision_history=decision_history,
+                broker_connected=connected_broker.is_connected() if connected_broker else None,
+            )
+            write_dashboard(dashboard_path, dashboard_payload)
+            return
+        else:
+            # Positions still open (market closed, can't execute)
+            # Don't log anything, just wait for next cycle or market open
+            print(f"⚠️ Session close attempted but positions still open: {positions_after_close}")
+            # Fall through to normal flow (will show HOLD or cutoff)
+
 
     if session["is_weekend"]:
         decision = build_hold_decision(
