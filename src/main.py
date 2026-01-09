@@ -571,14 +571,78 @@ def build_dashboard_payload(
     }
 
 
+def check_and_execute_exits(portfolio, market_snapshot, broker, trades_path, run_log_path):
+    """
+    Checks for SL/TP triggers and executes them immediately.
+    Returns True if any trade was executed, False otherwise.
+    """
+    exit_triggers = list_exit_triggers(market_snapshot)
+    if not exit_triggers:
+        return False
+    
+    executed = False
+    for trigger in exit_triggers:
+        symbol = trigger["symbol"]
+        qty = trigger["qty"]
+        price = trigger["price"]
+        trigger_type = trigger["trigger"]
+        
+        print(f"🚨 AUTO-EXIT TRIGGERED: {trigger_type} on {symbol} at {price}")
+        
+        # Determine strict or abstract broker
+        is_paper = isinstance(broker, PaperBroker)
+        
+        try:
+            # Execute SELL
+            # For SL/TP, we want to close the position.
+            notional = qty * price
+            
+            # Use execute method
+            result = broker.execute(
+                action="SELL",
+                symbol=symbol,
+                notional=notional,
+                price=price,
+                portfolio=portfolio,
+            )
+            
+            # Log it
+            reason = f"Running Stop Loss / Take Profit: {trigger_type} hit at {price}"
+            log_trade(run_log_path, result, reason=reason)
+            
+            # Update state/history
+            append_event(
+                trades_path,
+                {
+                    "type": "trade",
+                    "result": {
+                        "action": result.action,
+                        "symbol": result.symbol,
+                        "qty": result.qty,
+                        "price": result.price,
+                        "notional": result.notional,
+                        "timestamp": result.timestamp,
+                    },
+                    "reason": reason,
+                    "confidence": 1.0, # Forced exit
+                },
+            )
+            executed = True
+            
+        except Exception as e:
+            print(f"⚠️ Auto-Exit Failed for {symbol}: {e}")
+            
+    return executed
+
+
 # Global flag to control the refresh thread
 _stop_refresh_thread = False
 
 
-def price_refresh_loop(config, connected_broker, state_path, dashboard_path, trades_path, interval=10):
+def price_refresh_loop(config, connected_broker, state_path, dashboard_path, trades_path, run_log_path, interval=10):
     """
     Background thread: Updates portfolio, prices, and dashboard every `interval` seconds.
-    Does NOT call Grok or make trading decisions.
+    Also CHECKS AND EXECUTES Stop Loss / Take Profit triggers locally.
     """
     global _stop_refresh_thread
     
@@ -610,6 +674,11 @@ def price_refresh_loop(config, connected_broker, state_path, dashboard_path, tra
             watchlist_symbols = config["trading"].get("watchlist", []) or []
             watchlist_symbols = [s.upper() for s in watchlist_symbols]
             market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
+            
+            # 2b. CRITICAL SECURITY: Check for local SL/TP triggers and Execute immediately
+            # This ensures we don't wait 30 mins for the main loop.
+            if connected_broker:
+                 check_and_execute_exits(portfolio, market_snapshot, connected_broker, trades_path, run_log_path)
             
             equity = market_snapshot["equity"]
             # equity_series removed for fluidity/performance
@@ -651,9 +720,18 @@ def price_refresh_loop(config, connected_broker, state_path, dashboard_path, tra
         time.sleep(interval)
 
 
-def start_price_refresh_thread(config, connected_broker, state_path, dashboard_path, trades_path):
-    """Starts the background price refresh thread."""
-    global _stop_refresh_thread
+
+# Global flag to control the refresh thread
+_stop_refresh_thread = False
+_refresh_thread_instance = None
+
+def start_price_refresh_thread(config, connected_broker, state_path, dashboard_path, trades_path, run_log_path):
+    """Starts the background price refresh thread (Singleton)."""
+    global _stop_refresh_thread, _refresh_thread_instance
+    
+    if _refresh_thread_instance and _refresh_thread_instance.is_alive():
+        return
+
     _stop_refresh_thread = False
     
     refresh_interval = config["trading"].get("price_refresh_seconds", 10)
@@ -661,10 +739,11 @@ def start_price_refresh_thread(config, connected_broker, state_path, dashboard_p
     
     thread = threading.Thread(
         target=price_refresh_loop,
-        args=(config, connected_broker, state_path, dashboard_path, trades_path, refresh_interval),
+        args=(config, connected_broker, state_path, dashboard_path, trades_path, run_log_path, refresh_interval),
         daemon=True  # Daemon thread will stop when main program exits
     )
     thread.start()
+    _refresh_thread_instance = thread
     
     # Wait briefly to let the first refresh happen before main continues
     time.sleep(1)
@@ -686,7 +765,7 @@ def main():
     connected_broker = AlpacaBroker(key_id=alpaca_key, secret_key=alpaca_secret, paper=True)
     
     # Start background price refresh thread (updates dashboard every 10s)
-    start_price_refresh_thread(config, connected_broker, state_path, dashboard_path, trades_path)
+    start_price_refresh_thread(config, connected_broker, state_path, dashboard_path, trades_path, run_log_path)
 
     allowed_symbols = [symbol.upper() for symbol in config["trading"].get("universe", [])]
     watchlist_symbols = config["trading"].get("watchlist", []) or allowed_symbols

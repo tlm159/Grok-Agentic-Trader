@@ -15,13 +15,13 @@ python3 src/reset_all.py
 
 python3 src/loop.py &
 BOT_PID=$!
-python3 src/price_loop.py &
-PRICE_PID=$!
+# python3 src/price_loop.py &
+# PRICE_PID=$!
 
 cleanup() {
   rm -f "$LOCK_FILE"
   kill "$BOT_PID" 2>/dev/null || true
-  kill "$PRICE_PID" 2>/dev/null || true
+  # kill "$PRICE_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 
