@@ -1,103 +1,105 @@
 # Grok-Agentic-Trader
 
-Autonomous Grok-powered trading bot (Day Trader) that integrates with **Interactive Brokers (IBKR)** for real and paper trading.
+Autonomous **Swing Trading** bot powered by **Grok (xAI)**, now integrated with **Alpaca Markets** for commission-free trading.
 
-## How it works
+## 🚀 Key Features
+
+*   **Brain**: Uses Grok (xAI) to analyze market data, sentiment, and make trading decisions.
+*   **Broker**: Fully integrated with **Alpaca Markets** (Paper & Live).
+*   **Strategy**: **Swing Trading (T+1)**.
+    *   **No Day Trading**: Positions are held at least overnight.
+    *   **Same-Day Guard**: Hard-coded protection preventing same-day sales (PDT rule safe).
+    *   **Long Only**: No short selling.
+*   **Risk Management**:
+    *   **Mandatory Stop Loss**: calculated dynamically (ATR-based).
+    *   **Total PnL Tracking**: Clear view of real performance vs open positions.
+*   **UI**: Ultra-lightweight real-time dashboard (refresh every 5s).
+
+## 🛠️ How it works
 
 ```mermaid
 flowchart TD
-  A[Market data via yfinance] --> B[Session gate: NY hours, cutoff]
+  A[Market data via yfinance] --> B[Session gate: NY hours]
   B -->|In session| C[Live search]
   B -->|Out of session| H[Auto HOLD and logs]
   C --> D[LLM decision: Grok]
   D --> E{BUY / SELL / HOLD}
-  E -->|Trade| F[IBKR Broker]
+  E -->|Trade| F[Alpaca Broker]
   F --> G[Portfolio state]
   E -->|Hold| G
   G --> I[Dashboard JSON]
-  I --> J[UI realtime]
+  I --> J[UI realtime (5s refresh)]
   D --> K[Decision log]
   F --> K
-  L["Price loop (10s)"] --> I
+  K --> J
 ```
 
-## Quickstart
+## ⚡ Quickstart
 
-1) Create venv + install deps:
+### 1. Prerequisites
+*   Python 3.10+
+*   Alpaca Account (Paper or Live)
+*   xAI (Grok) API Key
+
+### 2. Installation
 ```bash
+# Clone
+git clone https://github.com/tlm159/Grok-Agentic-Trader.git
+cd Grok-Agentic-Trader
+
+# Virtual Env
 python3 -m venv .venv
 source .venv/bin/activate
+
+# Install Deps
 pip install -r requirements.txt
 ```
 
-2) Configure API keys:
+### 3. Configuration
+Copy the example env file and add your keys:
 ```bash
 cp .env.example .env
-# Edit .env with your Grok API Key
+nano .env
 ```
+Fill in:
+*   `XAI_API_KEY`
+*   `ALPACA_API_KEY`
+*   `ALPACA_SECRET_KEY`
 
-3) Start IB Gateway:
-- Launch IB Gateway (or TWS) and log in with your Paper/Live account.
-- Ensure API Settings: `Enable ActiveX and Socket Clients` = ON, `Read-Only API` = OFF, Port = `4002` (Paper).
-
-4) Run bot + UI:
+### 4. Run It 🚀
 ```bash
 ./scripts/run_live.sh
 ```
+> **Note**: This script automatically handles security (hides .env) and starts the server.
 
-5) Open the UI: `http://localhost:8000`
+### 5. Access Dashboard
+Open `http://localhost:8000` in your browser.
 
-## VPS (tmux)
+## 🖥️ Dashboard Logic
 
-Run in a tmux session so it keeps running after you close VSCode/SSH:
+*   **Total PnL**: Your real bottom line (`Current Equity - Starting Cash`). The trusted metric.
+*   **Open PnL**: Performance of *currently held* positions only.
+*   **Sync**: Prices and portfolio data update every **5 seconds**.
+*   **Grok Decision**: New analysis every **30 minutes**.
+
+## 🛡️ Safety Mechanisms
+
+1.  **Same-Day Sell Guard**: Impossible to sell a stock bought the same day.
+2.  **Market Hours Only**: Sleeps when NYSE is closed.
+3.  **Crash Recovery**: Portfolio state persists in `data/state.json`. If you restart, it remembers when positions were opened.
+
+## ☁️ VPS Deployment (tmux)
+
+Run in a tmux session so it keeps running after you disconnect:
 
 ```bash
 tmux new -s grok
 ./scripts/run_live.sh
+# Detach with: Ctrl+b, then d
 ```
 
-Detach (leave it running):
-```
-Ctrl+b, then d
-```
+**Security Warning**: If running on a VPS, firewall port 8000 to YOUR IP only.
 
-Re-attach:
-```bash
-tmux attach -t grok
-```
-
-Stop:
-Press `CTRL+C` inside tmux.
-
-Live logs:
-```bash
-tail -f data/run.log
-```
-
-## Security (CRITICAL for VPS)
-
-If running on a public VPS, your dashboard (port 8000) is visible to the entire internet.
-
-**Action Required:**
-
-1.  Use the `run_live.sh` script (it secures the server by hiding your `.env` file).
-2.  **Configure your VPS Firewall** (Hetzner/AWS/DigitalOcean) to restrict Port 8000 access:
-    *   **Allow**: TCP 8000 from `YOUR_HOME_IP` ONLY.
-    *   **Deny**: TCP 8000 from `0.0.0.0/0` (Anywhere else).
-
-This prevents unauthorized access to your dashboard and potential data theft.
-
-## Features & Rules
-
-- **Broker**: Fully integrated with **Interactive Brokers (IBKR)** via `ib_insync`.
-- **GFV Guard**: Prevents Good Faith Violations by checking Settled Cash (T+1) before every BUY.
-- **Intraday Only**: 
-  - Trades only during NYSE hours (15:30 - 22:00 FR / 09:30 - 16:00 NY).
-  - **Force Close**: All positions are automatically liquidated at 22:00 FR (16:00 NY). No overnight risk.
-- **Safety First**:
-  - **Stop Loss (SL)**: MANDATORY for every BUY. Auto-managed.
-  - **Take Profit (TP)**: Optional (can be null for unrestricted gains).
-- **Assets**: US-listed Equities only (No Crypto, No FX).
 - **Auto-Sync**: On a fresh start (empty `data/` folder), the bot automatically syncs its starting cash with your IBKR balance.
 
 ## Configuration (`config/settings.json`)
