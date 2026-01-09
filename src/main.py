@@ -344,6 +344,7 @@ def build_system_prompt():
         "\n"
         "### Trading Hours\n"
         "- You are ONLY consulted during NYSE hours: **15h30 - 22h00 Paris time**.\n"
+        "- **Weekends**: Markets are CLOSED Saturday and Sunday. You won't be asked.\n"
         "- Outside these hours, the system automatically HOLDs without asking you.\n"
         "- You will receive the current date/time in the prompt to help your decisions.\n"
         "\n"
