@@ -16,7 +16,7 @@ from live_search import LiveSearchUnavailable, fetch_live_context
 from live_search_cache import is_cache_fresh, read_cache, write_cache
 from market import get_market_data, get_last_price
 from state import Portfolio
-from ibkr_broker import IbkrBroker
+from alpaca_broker import AlpacaBroker
 import os
 import threading
 import time
@@ -112,7 +112,7 @@ def build_market_snapshot(portfolio, watchlist=None):
         }
         positions_value += value
     
-    # Use Broker-reported equity if available (e.g. from IBKR), otherwise calculate estimate
+    # Use Broker-reported equity if available (e.g. from Alpaca), otherwise calculate estimate
     if portfolio.equity is not None:
          equity = portfolio.equity
     else:
@@ -329,41 +329,71 @@ def close_all_positions(portfolio, broker, trades_path, reason):
 
 def build_system_prompt():
     return (
-        "SYSTEM INSTRUCTION: EXECUTE AUTONOMOUS INTRADAY TRADING STRATEGY.\n"
-        "OBJECTIVE: Maximize Risk-Adjusted Returns by analyzing News Sentiment and Market Volatility (ATR).\n"
+        "# GROK SWING TRADER - SYSTEM INSTRUCTIONS\n"
         "\n"
-        "DECISION FRAMEWORK (Chain of Thought):\n"
-        "1. DATA INGESTION: Analyze 'Live context' (News) & 'Market snapshot' (Price, ATR).\n"
-        "2. SIGNAL GENERATION: Identify correlation between News Sentiment and Price Action. "
-        "   - Positive News + Bullish Price = BUY Signal.\n"
-        "   - Ambiguous Data = HOLD Signal.\n"
-        "3. RISK COMPUTATION: Calculate Position Size based on conviction and Volatility (ATR).\n"
-        "   - YOU have full authority over position sizing. You may split capital across multiple assets (Diversification).\n"
-        "   - MANDATORY: Define Stop Loss (SL) based on ATR (e.g., Price - 1.5 * ATR).\n"
-        "   - EXIT AUTONOMY: You can SELL at any time (Profit Taking / Conviction Change). You are NOT bound to wait for SL/TP triggers.\n"
-        "4. EXECUTION: Generate JSON Order.\n"
+        "## IDENTITY\n"
+        "You are an autonomous trader specialized in swing trading US equities.\n"
+        "Broker: Alpaca | Capital: Variable | Style: Swing (Hold minimum 1 day)\n"
         "\n"
-        "CONSTRAINTS (Technical & Hard):\n"
-        "- UNIVERSE: You are authorized to trade ANY US-listed ticker found in 'Live context'. You are NOT restricted to a fixed watchlist.\n"
-        "- CRYPTO BAN: Do NOT trade cryptocurrencies (BTC, ETH, XRP, SOL, etc.). US Equities ONLY.\n"
-        "- SHORT SELLING: DISABLED (Technical limitation). Do NOT attempt to Short.\n"
-        "- TIME LIMIT: All positions forcefully closed at 15:55 NY. No overnight holds.\n"
-        "- HALLUCINATIONS: You must NOT invent prices or ATR. Use only provided data.\n"
+        "## OBJECTIVE\n"
+        "Maximize risk-adjusted returns via News + ATR analysis.\n"
         "\n"
-        "OUTPUT SCHEMA (JSON Only):\n"
-        "{ \n"
-        "  \"action\": \"BUY|SELL|HOLD\", \n"
-        "  \"symbol\": \"TICKER\", \n"
-        "  \"notional\": 15.0, \n"
-        "  \"reason\": \"Brief rationale in French\", \n"
-        "  \"confidence\": 0.9, \n"
-        "  \"reflection\": \"Step-by-step Chain of Thought analysis in French (Data->Signal->Risk)\", \n"
-        "  \"sl_price\": 100.50, \n"
-        "  \"tp_price\": 105.00, \n"
-        "  \"evidence\": [\"News source\", \"ATR value\"] \n"
-        "} \n"
-        "Note: 'SELL' is ONLY for closing existing Long positions. To open a trade, use 'BUY'.\n"
-        "OPTIONAL: To adjust SL/TP without trading (e.g. Trailing Stop), use action 'HOLD' with the symbol and the new 'sl_price'."
+        "---\n"
+        "\n"
+        "## DECISION PROCESS\n"
+        "\n"
+        "### 1. ANALYSIS\n"
+        "- Read 'Live context' (recent news) and 'Market snapshot' (price, ATR)\n"
+        "- Identify catalysts: earnings, upgrades, breaking news\n"
+        "\n"
+        "### 2. SIGNAL\n"
+        "- Positive news + Bullish price = BUY\n"
+        "- Uncertainty or high risk = HOLD\n"
+        "- Existing position + target reached or bad news = SELL\n"
+        "\n"
+        "### 3. SIZING & RISK\n"
+        "- You are 100% AUTONOMOUS: Go ALL-IN on one stock OR diversify across multiple. Your choice.\n"
+        "- STOP LOSS MANDATORY: sl_price = Price - (1.5 × ATR). NEVER trade without SL.\n"
+        "- Take Profit optional but recommended\n"
+        "\n"
+        "---\n"
+        "\n"
+        "## ABSOLUTE RULES\n"
+        "\n"
+        "| Rule | Detail |\n"
+        "|------|--------|\n"
+        "| LONG ONLY | BUY to open, SELL to close. No shorting. |\n"
+        "| NO SAME-DAY | NEVER buy AND sell the same ticker on the same day (PDT rule). |\n"
+        "| SELL = D+1 | You can sell starting the day AFTER purchase. |\n"
+        "| OVERNIGHT OK | Positions can be held for multiple days. |\n"
+        "| US EQUITIES | US stocks only. No crypto. |\n"
+        "| MIN $1 | Minimum order: $1.00 notional (fractions OK). |\n"
+        "| NO HALLUCINATION | Use ONLY the provided data. |\n"
+        "\n"
+        "---\n"
+        "\n"
+        "## RESPONSE FORMAT (JSON ONLY)\n"
+        "\n"
+        "Respond in French for 'reason' and 'reflection' fields.\n"
+        "\n"
+        "```json\n"
+        "{\n"
+        "  \"action\": \"BUY|SELL|HOLD\",\n"
+        "  \"symbol\": \"TICKER\",\n"
+        "  \"notional\": 50.0,\n"
+        "  \"reason\": \"Explication courte en français\",\n"
+        "  \"confidence\": 0.85,\n"
+        "  \"reflection\": \"Analyse complète en français: News → Signal → Risk\",\n"
+        "  \"sl_price\": 95.50,\n"
+        "  \"tp_price\": 110.00,\n"
+        "  \"evidence\": [\"Source 1\", \"ATR: 2.5\"]\n"
+        "}\n"
+        "```\n"
+        "\n"
+        "**Notes:**\n"
+        "- BUY = Open new long position\n"
+        "- SELL = Close existing position (never same day as BUY)\n"
+        "- HOLD = Wait or adjust SL/TP of existing position\n"
     )
 
 
@@ -511,7 +541,7 @@ def build_dashboard_payload(
     error,
     equity_series,
     decision_history,
-    ibkr_connected=None,
+    broker_connected=None,
 ):
     return {
         "model": config["llm"]["model"],
@@ -527,17 +557,17 @@ def build_dashboard_payload(
         "leverage": market_snapshot.get("leverage"),
         "cash_ratio": market_snapshot.get("cash_ratio"),
         "open_pnl": market_snapshot.get("open_pnl"),
-        "equity_delta": equity_delta,
+        "equity_delta": None, # Removed for fluidity
         "decision": decision,
         "raw": raw,
         "prompt": prompt,
         "trade": trade,
         "error": error,
-        "equity_series": equity_series,
+        "equity_series": [], # Removed for fluidity
         "decision_history": decision_history,
         "next_check_minutes": decision.get("next_check_minutes") if decision else None,
         "positions_summary": decision.get("positions_summary") if decision else None,
-        "ibkr_connected": ibkr_connected,
+        "broker_connected": broker_connected,
     }
 
 
@@ -561,7 +591,7 @@ def price_refresh_loop(config, connected_broker, state_path, dashboard_path, tra
     
     while not _stop_refresh_thread:
         # Capture connection status FIRST (before any potential failures)
-        ibkr_status = connected_broker.is_connected() if connected_broker else None
+        broker_status = connected_broker.is_connected() if connected_broker else None
         
         try:
             # 1. Load current portfolio state
@@ -571,13 +601,18 @@ def price_refresh_loop(config, connected_broker, state_path, dashboard_path, tra
                 currency=config["trading"]["currency"],
             )
             
-            # 2. Build market snapshot (uses yfinance, no IBKR calls)
+            # 1b. Sync with Alpaca to get real-time cash/positions
+            if connected_broker:
+                portfolio = connected_broker.sync_portfolio(portfolio)
+                portfolio.save(state_path)  # Persist synced state
+            
+            # 2. Build market snapshot (uses yfinance, no broker calls)
             watchlist_symbols = config["trading"].get("watchlist", []) or []
             watchlist_symbols = [s.upper() for s in watchlist_symbols]
             market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
             
             equity = market_snapshot["equity"]
-            equity_series = load_equity_series(trades_path, limit=200)
+            # equity_series removed for fluidity/performance
             decision_history = load_decision_history(trades_path, limit=12)
             
             # 3. Build and write dashboard (lightweight, no Grok call)
@@ -596,16 +631,16 @@ def price_refresh_loop(config, connected_broker, state_path, dashboard_path, tra
                 "cash_ratio": market_snapshot.get("cash_ratio"),
                 "open_pnl": market_snapshot.get("open_pnl"),
                 "equity_delta": None,  # Simplified for refresh loop
-                "decision": None,
+                "decision": decision_history[-1] if decision_history else None,
                 "raw": None,
                 "prompt": None,
                 "trade": None,
                 "error": None,
-                "equity_series": equity_series,
+                "equity_series": [], # Removed
                 "decision_history": decision_history,
                 "next_check_minutes": config["trading"].get("cycle_minutes", 30),
                 "positions_summary": None,
-                "ibkr_connected": ibkr_status,
+                "broker_connected": broker_status,
             }
             write_dashboard(dashboard_path, dashboard_payload)
             
@@ -645,8 +680,10 @@ def main():
     dashboard_path = config["paths"]["dashboard_path"]
     run_log_path = config["paths"].get("run_log_path")
     
-    # Init Broker (IBKR Only)
-    connected_broker = IbkrBroker(host='127.0.0.1', port=4002, client_id=1)
+    # Init Broker (Alpaca)
+    alpaca_key = os.getenv("ALPACA_API_KEY")
+    alpaca_secret = os.getenv("ALPACA_SECRET_KEY")
+    connected_broker = AlpacaBroker(key_id=alpaca_key, secret_key=alpaca_secret, paper=True)
     
     # Start background price refresh thread (updates dashboard every 10s)
     start_price_refresh_thread(config, connected_broker, state_path, dashboard_path, trades_path)
@@ -666,6 +703,7 @@ def main():
     )
 
     if connected_broker:
+        # Sync portfolio from Alpaca
         portfolio = connected_broker.sync_portfolio(portfolio)
         
         # AUTO-UPDATE CONFIG IF FRESH START
@@ -807,7 +845,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
-            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
+            broker_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -887,7 +925,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
-            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
+            broker_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -918,7 +956,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
-            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
+            broker_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -950,7 +988,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
-            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
+            broker_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -983,7 +1021,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
-            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
+            broker_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -1136,7 +1174,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
-            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
+            broker_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -1166,7 +1204,7 @@ def main():
                 error=f"Symbol not allowed: {symbol}",
                 equity_series=equity_series,
                 decision_history=decision_history,
-            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
+            broker_connected=connected_broker.is_connected() if connected_broker else None,
             )
             write_dashboard(dashboard_path, dashboard_payload)
             return
@@ -1198,7 +1236,7 @@ def main():
             error=f"Crypto/FX symbol blocked: {symbol}",
             equity_series=equity_series,
             decision_history=decision_history,
-            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
+            broker_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -1289,7 +1327,7 @@ def main():
         error=None,
         equity_series=equity_series,
         decision_history=load_decision_history(trades_path, limit=12),
-        ibkr_connected=connected_broker.is_connected() if connected_broker else None,
+        broker_connected=connected_broker.is_connected() if connected_broker else None,
     )
     write_dashboard(dashboard_path, dashboard_payload)
 

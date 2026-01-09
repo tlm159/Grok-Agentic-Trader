@@ -250,25 +250,18 @@ function updateUI(data) {
   $("equity").textContent = formatMoney(data.equity, data.currency);
   $("cash").textContent = formatMoney(data.cash, data.currency);
 
-  // Settled Cash (T+1)
-  const settledCashEl = $("settledCash");
-  if (data.settled_cash !== null && data.settled_cash !== undefined) {
-    settledCashEl.textContent = `Tradable (T+1): ${formatMoney(data.settled_cash, data.currency)}`;
-  } else {
-    settledCashEl.textContent = "Tradable (T+1): -";
-  }
 
-  // IBKR Connection Status
-  const ibkrStatusEl = $("ibkrStatus");
-  if (data.ibkr_connected === true) {
-    ibkrStatusEl.textContent = "🟢 Connected";
-    ibkrStatusEl.style.color = "#4ade80";
-  } else if (data.ibkr_connected === false) {
-    ibkrStatusEl.textContent = "🔴 Disconnected";
-    ibkrStatusEl.style.color = "#f87171";
+  // Alpaca Connection Status
+  const brokerStatusEl = $("ibkrStatus");
+  if (data.broker_connected === true) {
+    brokerStatusEl.textContent = "🟢 Alpaca Connected";
+    brokerStatusEl.style.color = "#4ade80";
+  } else if (data.broker_connected === false) {
+    brokerStatusEl.textContent = "🔴 Disconnected";
+    brokerStatusEl.style.color = "#f87171";
   } else {
-    ibkrStatusEl.textContent = "-";
-    ibkrStatusEl.style.color = "";
+    brokerStatusEl.textContent = "";
+    brokerStatusEl.style.color = "";
   }
 
   $("positionsValue").textContent = `Positions value: ${formatMoney(data.positions_value, data.currency)}`;
@@ -294,26 +287,15 @@ function updateUI(data) {
     $("cashRatio").textContent = "Cash ratio: -";
   }
 
-  const deltaEl = $("equityDelta");
-  deltaEl.classList.remove("good", "bad");
-  if (data.equity_delta === null || data.equity_delta === undefined) {
-    deltaEl.textContent = "Delta: -";
-  } else {
-    const delta = Number(data.equity_delta);
-    const prefix = delta >= 0 ? "+" : "";
-    deltaEl.textContent = `Delta: ${prefix}${delta.toFixed(2)} ${data.currency || "USD"}`;
-    deltaEl.classList.add(delta >= 0 ? "good" : "bad");
-  }
-
   const pnlEl = $("pnl");
   pnlEl.classList.remove("good", "bad");
   if (data.starting_cash !== null && data.starting_cash !== undefined && data.equity !== null) {
     const pnl = Number(data.equity) - Number(data.starting_cash);
     const prefix = pnl >= 0 ? "+" : "";
-    pnlEl.textContent = `PnL: ${prefix}${pnl.toFixed(2)} ${data.currency || "USD"}`;
+    pnlEl.textContent = `Total PnL: ${prefix}${pnl.toFixed(2)} ${data.currency || "USD"}`;
     pnlEl.classList.add(pnl >= 0 ? "good" : "bad");
   } else {
-    pnlEl.textContent = "PnL: -";
+    pnlEl.textContent = "Total PnL: -";
   }
 
   const decision = data.decision || {};
@@ -326,7 +308,7 @@ function updateUI(data) {
   updatePositions(data.positions || {});
   updateTrade(data.trade || null);
   updateHistory(data.decision_history || []);
-  drawChart(data.equity_series || [], data.starting_cash);
+  // Chart removed for fluidity
 
   const promptEl = $("lastPrompt");
   const rawEl = $("lastRaw");
@@ -358,4 +340,4 @@ async function refresh() {
 }
 
 refresh();
-setInterval(refresh, 3000);
+setInterval(refresh, 5000);

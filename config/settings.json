@@ -24,9 +24,9 @@
   "trading": {
     "mode": "paper",
     "currency": "USD",
-    "starting_cash": 100.0,
+    "starting_cash": 50.0,
     "cycle_minutes": 30,
-    "price_refresh_seconds": 10,
+    "price_refresh_seconds": 5,
     "default_sl_pct": null,
     "default_tp_pct": null,
     "universe": [],

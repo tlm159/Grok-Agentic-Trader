@@ -30,12 +30,13 @@ class Portfolio:
                 "avg_entry": Portfolio._coerce_float(value.get("avg_entry"), None),
                 "current_price": Portfolio._coerce_float(value.get("current_price"), None),
                 "unrealized_pl": Portfolio._coerce_float(value.get("unrealized_pl"), None),
+                "open_date": value.get("open_date"),  # Track when position was opened (for PDT)
             }
         if value is None:
             qty = 0.0
         else:
             qty = Portfolio._coerce_float(value, 0.0)
-        return {"qty": qty, "sl": None, "tp": None, "avg_entry": None}
+        return {"qty": qty, "sl": None, "tp": None, "avg_entry": None, "open_date": None}
 
     @classmethod
     def load(cls, path, starting_cash, currency):
