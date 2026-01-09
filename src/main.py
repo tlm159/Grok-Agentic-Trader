@@ -976,37 +976,8 @@ def main():
         write_dashboard(dashboard_path, dashboard_payload)
         return
 
-    if session["in_cutoff"]:
-        cutoff = session["cutoff_paris"].strftime("%H:%M")
-        decision = build_hold_decision(
-            f"Fenêtre de clôture : pas de nouvelle position après {cutoff} (heure FR).",
-            positions_open,
-            positions_summary_default,
-            fixed_next_minutes,
-            reflection=positions_summary_default,
-        )
-        log_decision(run_log_path, decision, note="CUTOFF")
-        append_event(
-            trades_path, {"type": "decision_parsed", "decision": decision, "attempt": 0}
-        )
-        decision_history = load_decision_history(trades_path, limit=12)
-        dashboard_payload = build_dashboard_payload(
-            config=config,
-            portfolio=portfolio,
-            market_snapshot=market_snapshot,
-            equity=equity,
-            equity_delta=equity_delta,
-            decision=decision,
-            raw=None,
-            prompt=None,
-            trade=None,
-            error=None,
-            equity_series=equity_series,
-            decision_history=decision_history,
-            broker_connected=connected_broker.is_connected() if connected_broker else None,
-        )
-        write_dashboard(dashboard_path, dashboard_payload)
-        return
+    # NOTE: No cutoff window - swing traders can trade until market close (22h Paris)
+    # SL/TP and Grok can sell anytime during market hours.
 
     if not session["in_session"]:
         open_time = session["open_paris"].strftime("%H:%M")
