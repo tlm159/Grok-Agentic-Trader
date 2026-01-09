@@ -409,7 +409,14 @@ def build_user_prompt(
     decision_memory,
     fixed_minutes,
 ):
+    from datetime import datetime
+    import pytz
+    paris_tz = pytz.timezone("Europe/Paris")
+    current_time_paris = datetime.now(paris_tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+    
     return (
+        "CONTEXT:\n"
+        f"Current Date/Time: {current_time_paris}\n\n"
         "Portfolio:\n"
         f"Cash: {portfolio.cash} {portfolio.currency}\n"
         f"Buying Power: {getattr(portfolio, 'buying_power', portfolio.cash)} {portfolio.currency}\n"
@@ -435,6 +442,7 @@ def build_user_prompt(
         "Refer to the SYSTEM INSTRUCTION for the required JSON Output Schema (Chain of Thought).\n"
         f"Set next_check_minutes to {fixed_minutes} (system uses a fixed schedule).\n"
     )
+
 
 
 def request_decision(
