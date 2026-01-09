@@ -1,111 +1,118 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Grok Agentic Trader</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <div class="bg-glow"></div>
-    <div class="app">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Live Model</p>
-          <h1>Grok Agentic Trader</h1>
-          <p class="sub">Single model, real-time snapshots, full autonomy.</p>
-        </div>
-        <div class="hero-meta">
-          <div class="meta-card">
-            <span class="label">Model</span>
-            <span id="model">-</span>
-          </div>
-          <div class="meta-card">
-            <span class="label">Budget</span>
-            <span id="budget">-</span>
-          </div>
-          <div class="meta-card">
-            <span class="label">Last Update</span>
-            <span id="timestamp">-</span>
-          </div>
-          <div class="meta-card">
-            <span class="label">Next Check</span>
-            <span id="nextCheck">-</span>
-          </div>
-        </div>
-      </header>
 
-      <div class="layout">
-        <main class="main">
-          <section class="grid">
-            <div class="card">
-              <h3>Equity</h3>
-              <p class="big" id="equity">-</p>
-              <p class="muted" id="pnl">-</p>
-              <p class="muted" id="equityDelta">-</p>
-              <canvas id="equityChart" height="120"></canvas>
-            </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grok Agentic Trader</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
 
-            <div class="card">
-              <h3>Cash</h3>
-              <p class="big" id="cash">-</p>
-              <p class="muted" id="positionsValue">-</p>
-              <p class="muted" id="openPnl">-</p>
-              <p class="muted" id="leverage">-</p>
-              <p class="muted" id="cashRatio">-</p>
-            </div>
-
-            <div class="card">
-              <h3>Last Decision</h3>
-              <div class="pill" id="action">-</div>
-              <p><span class="label">Symbol:</span> <span id="symbol">-</span></p>
-              <p><span class="label">Notional:</span> <span id="notional">-</span></p>
-              <p><span class="label">Confidence:</span> <span id="confidence">-</span></p>
-            </div>
-
-            <div class="card wide">
-              <h3>Reflection</h3>
-              <p class="reflection" id="reflection">Waiting for model output...</p>
-            </div>
-
-            <div class="card wide">
-              <h3>Positions</h3>
-              <div class="table" id="positions"></div>
-            </div>
-
-            <div class="card wide">
-              <h3>Last Trade</h3>
-              <div class="table" id="trade"></div>
-            </div>
-
-            <div class="card wide">
-              <h3>Grok Output</h3>
-              <details class="details" open>
-                <summary>Last Prompt</summary>
-                <pre id="lastPrompt" class="code-block">-</pre>
-              </details>
-              <details class="details">
-                <summary>Last Raw Response</summary>
-                <pre id="lastRaw" class="code-block">-</pre>
-              </details>
-            </div>
-          </section>
-        </main>
-
-        <aside class="side">
-          <div class="card sticky">
-            <h3>Grok History</h3>
-            <div class="history" id="history"></div>
-          </div>
-        </aside>
+<body>
+  <div class="bg-glow"></div>
+  <div class="app">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Live Model</p>
+        <h1>Grok Agentic Trader</h1>
+        <p class="sub">Single model, real-time snapshots, full autonomy.</p>
       </div>
+      <div class="hero-meta">
+        <div class="meta-card">
+          <span class="label">Model</span>
+          <span id="model">-</span>
+        </div>
+        <div class="meta-card">
+          <span class="label">Budget</span>
+          <span id="budget">-</span>
+        </div>
+        <div class="meta-card">
+          <span class="label">Last Update</span>
+          <span id="timestamp">-</span>
+        </div>
+        <div class="meta-card">
+          <span class="label">Next Check</span>
+          <span id="nextCheck">-</span>
+        </div>
+        <div class="meta-card">
+          <span class="label">IBKR</span>
+          <span id="ibkrStatus">-</span>
+        </div>
+      </div>
+    </header>
 
-      <footer class="footer">
-        <span>Local dashboard, auto-refresh every 3s</span>
-        <span id="status">Loading...</span>
-      </footer>
+    <div class="layout">
+      <main class="main">
+        <section class="grid">
+          <div class="card">
+            <h3>Equity</h3>
+            <p class="big" id="equity">-</p>
+            <p class="muted" id="pnl">-</p>
+            <p class="muted" id="equityDelta">-</p>
+            <canvas id="equityChart" height="120"></canvas>
+          </div>
+
+          <div class="card">
+            <h3>Cash</h3>
+            <p class="big" id="cash">-</p>
+            <p class="muted" id="settledCash">Settled: -</p>
+            <p class="muted" id="positionsValue">-</p>
+            <p class="muted" id="openPnl">-</p>
+            <p class="muted" id="leverage">-</p>
+            <p class="muted" id="cashRatio">-</p>
+          </div>
+
+          <div class="card">
+            <h3>Last Decision</h3>
+            <div class="pill" id="action">-</div>
+            <p><span class="label">Symbol:</span> <span id="symbol">-</span></p>
+            <p><span class="label">Notional:</span> <span id="notional">-</span></p>
+            <p><span class="label">Confidence:</span> <span id="confidence">-</span></p>
+          </div>
+
+          <div class="card wide">
+            <h3>Reflection</h3>
+            <p class="reflection" id="reflection">Waiting for model output...</p>
+          </div>
+
+          <div class="card wide">
+            <h3>Positions</h3>
+            <div class="table" id="positions"></div>
+          </div>
+
+          <div class="card wide">
+            <h3>Last Trade</h3>
+            <div class="table" id="trade"></div>
+          </div>
+
+          <div class="card wide">
+            <h3>Grok Output</h3>
+            <details class="details" open>
+              <summary>Last Prompt</summary>
+              <pre id="lastPrompt" class="code-block">-</pre>
+            </details>
+            <details class="details">
+              <summary>Last Raw Response</summary>
+              <pre id="lastRaw" class="code-block">-</pre>
+            </details>
+          </div>
+        </section>
+      </main>
+
+      <aside class="side">
+        <div class="card sticky">
+          <h3>Grok History</h3>
+          <div class="history" id="history"></div>
+        </div>
+      </aside>
     </div>
 
-    <script src="app.js"></script>
-  </body>
+    <footer class="footer">
+      <span id="status">Loading...</span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+
 </html>

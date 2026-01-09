@@ -16,8 +16,10 @@ from live_search import LiveSearchUnavailable, fetch_live_context
 from live_search_cache import is_cache_fresh, read_cache, write_cache
 from market import get_market_data, get_last_price
 from state import Portfolio
-from alpaca_broker import AlpacaBroker
+from ibkr_broker import IbkrBroker
 import os
+import threading
+import time
 
 
 def load_recent_events(path, limit=5):
@@ -64,7 +66,7 @@ def build_market_snapshot(portfolio, watchlist=None):
         sl_price = normalized.get("sl")
         tp_price = normalized.get("tp")
         avg_entry = normalized.get("avg_entry")
-        # Use trusted price from Alpaca if available, else fetch
+        # Use trusted price from broker if available, else fetch
         cached_price = normalized.get("current_price")
         if cached_price is not None:
              price = cached_price
@@ -82,7 +84,7 @@ def build_market_snapshot(portfolio, watchlist=None):
         pnl = None
         pnl_pct = None
         
-        # Use trusted PnL from Alpaca if available
+        # Use trusted PnL from broker if available
         cached_pnl = normalized.get("unrealized_pl")
         
         if cached_pnl is not None:
@@ -110,7 +112,7 @@ def build_market_snapshot(portfolio, watchlist=None):
         }
         positions_value += value
     
-    # Use Broker-reported equity if available (e.g. from Alpaca), otherwise calculate estimate
+    # Use Broker-reported equity if available (e.g. from IBKR), otherwise calculate estimate
     if portfolio.equity is not None:
          equity = portfolio.equity
     else:
@@ -509,11 +511,13 @@ def build_dashboard_payload(
     error,
     equity_series,
     decision_history,
+    ibkr_connected=None,
 ):
     return {
         "model": config["llm"]["model"],
         "currency": portfolio.currency,
         "cash": portfolio.cash,
+        "settled_cash": portfolio.settled_cash,
         "starting_cash": float(config["trading"]["starting_cash"]),
         "positions": market_snapshot["positions"],
         "positions_value": market_snapshot["positions_value"],
@@ -533,7 +537,104 @@ def build_dashboard_payload(
         "decision_history": decision_history,
         "next_check_minutes": decision.get("next_check_minutes") if decision else None,
         "positions_summary": decision.get("positions_summary") if decision else None,
+        "ibkr_connected": ibkr_connected,
     }
+
+
+# Global flag to control the refresh thread
+_stop_refresh_thread = False
+
+
+def price_refresh_loop(config, connected_broker, state_path, dashboard_path, trades_path, interval=10):
+    """
+    Background thread: Updates portfolio, prices, and dashboard every `interval` seconds.
+    Does NOT call Grok or make trading decisions.
+    """
+    global _stop_refresh_thread
+    
+    # Create a new event loop for this thread (required for ib_insync)
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    print("📊 Price Refresh Loop Started!")
+    
+    while not _stop_refresh_thread:
+        # Capture connection status FIRST (before any potential failures)
+        ibkr_status = connected_broker.is_connected() if connected_broker else None
+        
+        try:
+            # 1. Load current portfolio state
+            portfolio = Portfolio.load(
+                state_path,
+                starting_cash=config["trading"]["starting_cash"],
+                currency=config["trading"]["currency"],
+            )
+            
+            # 2. Build market snapshot (uses yfinance, no IBKR calls)
+            watchlist_symbols = config["trading"].get("watchlist", []) or []
+            watchlist_symbols = [s.upper() for s in watchlist_symbols]
+            market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
+            
+            equity = market_snapshot["equity"]
+            equity_series = load_equity_series(trades_path, limit=200)
+            decision_history = load_decision_history(trades_path, limit=12)
+            
+            # 3. Build and write dashboard (lightweight, no Grok call)
+            dashboard_payload = {
+                "model": config["llm"]["model"],
+                "currency": portfolio.currency,
+                "cash": portfolio.cash,
+                "settled_cash": portfolio.settled_cash,
+                "starting_cash": float(config["trading"]["starting_cash"]),
+                "positions": market_snapshot["positions"],
+                "positions_value": market_snapshot["positions_value"],
+                "equity": equity,
+                "gross_exposure": market_snapshot.get("gross_exposure"),
+                "net_exposure": market_snapshot.get("net_exposure"),
+                "leverage": market_snapshot.get("leverage"),
+                "cash_ratio": market_snapshot.get("cash_ratio"),
+                "open_pnl": market_snapshot.get("open_pnl"),
+                "equity_delta": None,  # Simplified for refresh loop
+                "decision": None,
+                "raw": None,
+                "prompt": None,
+                "trade": None,
+                "error": None,
+                "equity_series": equity_series,
+                "decision_history": decision_history,
+                "next_check_minutes": config["trading"].get("cycle_minutes", 30),
+                "positions_summary": None,
+                "ibkr_connected": ibkr_status,
+            }
+            write_dashboard(dashboard_path, dashboard_payload)
+            
+        except Exception as e:
+            print(f"⚠️ Price Refresh Error: {e}")
+        
+        # Sleep for interval
+        time.sleep(interval)
+
+
+def start_price_refresh_thread(config, connected_broker, state_path, dashboard_path, trades_path):
+    """Starts the background price refresh thread."""
+    global _stop_refresh_thread
+    _stop_refresh_thread = False
+    
+    refresh_interval = config["trading"].get("price_refresh_seconds", 10)
+    print(f"🔄 Starting Price Refresh Thread (every {refresh_interval}s)...")
+    
+    thread = threading.Thread(
+        target=price_refresh_loop,
+        args=(config, connected_broker, state_path, dashboard_path, trades_path, refresh_interval),
+        daemon=True  # Daemon thread will stop when main program exits
+    )
+    thread.start()
+    
+    # Wait briefly to let the first refresh happen before main continues
+    time.sleep(1)
+    
+    return thread
 
 
 def main():
@@ -544,17 +645,11 @@ def main():
     dashboard_path = config["paths"]["dashboard_path"]
     run_log_path = config["paths"].get("run_log_path")
     
-    # Init Broker
-    broker_type = config["trading"].get("broker", "paper")
-    alpaca_broker = None
-    if broker_type == "alpaca":
-        api_key = os.getenv("ALPACA_API_KEY")
-        secret_key = os.getenv("ALPACA_SECRET_KEY")
-        endpoint = os.getenv("ALPACA_ENDPOINT", "https://paper-api.alpaca.markets")
-        paper_mode = "paper" in endpoint
-        if not api_key or not secret_key:
-             raise ValueError("Alpaca broker selected but keys missing in .env")
-        alpaca_broker = AlpacaBroker(api_key, secret_key, paper=paper_mode)
+    # Init Broker (IBKR Only)
+    connected_broker = IbkrBroker(host='127.0.0.1', port=4002, client_id=1)
+    
+    # Start background price refresh thread (updates dashboard every 10s)
+    start_price_refresh_thread(config, connected_broker, state_path, dashboard_path, trades_path)
 
     allowed_symbols = [symbol.upper() for symbol in config["trading"].get("universe", [])]
     watchlist_symbols = config["trading"].get("watchlist", []) or allowed_symbols
@@ -570,8 +665,8 @@ def main():
         currency=config["trading"]["currency"],
     )
 
-    if alpaca_broker:
-        portfolio = alpaca_broker.sync_portfolio(portfolio)
+    if connected_broker:
+        portfolio = connected_broker.sync_portfolio(portfolio)
         
         # AUTO-UPDATE CONFIG IF FRESH START
         # If we have no history, we align the "starting point" with reality to have clean PnL
@@ -612,14 +707,14 @@ def main():
             allow_negative_cash=config["trading"]["allow_negative_cash"],
             allow_short=config["trading"]["allow_short"],
         )
-        if alpaca_broker:
+        if connected_broker:
              # For auto-exit, we use the abstract execute method or specific logic?
              # Auto-exits in main.py loops through triggers and calls execute.
-             # We can make `broker` variable point to alpaca_broker wrapper.
+             # We can make `broker` variable point to connected_broker wrapper.
              pass
         
         # Abstract broker interface for exit loop
-        active_broker = alpaca_broker if alpaca_broker else broker
+        active_broker = connected_broker if connected_broker else broker
         
         last_trade = None
         for trigger in exit_triggers:
@@ -662,8 +757,8 @@ def main():
             )
             log_trade(run_log_path, result, reason="AUTO_EXIT")
         
-        if alpaca_broker:
-            portfolio = alpaca_broker.sync_portfolio(portfolio)
+        if connected_broker:
+            portfolio = connected_broker.sync_portfolio(portfolio)
             
         portfolio.save(state_path)
         market_snapshot = build_market_snapshot(portfolio, watchlist=watchlist_symbols)
@@ -712,6 +807,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
+            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -726,12 +822,12 @@ def main():
             allow_negative_cash=config["trading"]["allow_negative_cash"],
             allow_short=config["trading"]["allow_short"],
         )
-        active_broker = alpaca_broker if alpaca_broker else broker
+        active_broker = connected_broker if connected_broker else broker
         
-        if alpaca_broker:
-             alpaca_broker.close_all_positions()
+        if connected_broker:
+             connected_broker.close_all_positions()
              last_trade = None
-             portfolio = alpaca_broker.sync_portfolio(portfolio)
+             portfolio = connected_broker.sync_portfolio(portfolio)
         else:
              reason = "SESSION_CLOSE"
              last_trade = close_all_positions(portfolio, broker, trades_path, reason)
@@ -791,6 +887,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
+            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -821,6 +918,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
+            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -852,6 +950,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
+            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -884,6 +983,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
+            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -1036,6 +1136,7 @@ def main():
             error=None,
             equity_series=equity_series,
             decision_history=decision_history,
+            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -1065,6 +1166,7 @@ def main():
                 error=f"Symbol not allowed: {symbol}",
                 equity_series=equity_series,
                 decision_history=decision_history,
+            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
             )
             write_dashboard(dashboard_path, dashboard_payload)
             return
@@ -1096,6 +1198,7 @@ def main():
             error=f"Crypto/FX symbol blocked: {symbol}",
             equity_series=equity_series,
             decision_history=decision_history,
+            ibkr_connected=connected_broker.is_connected() if connected_broker else None,
         )
         write_dashboard(dashboard_path, dashboard_payload)
         return
@@ -1131,7 +1234,7 @@ def main():
         allow_negative_cash=config["trading"]["allow_negative_cash"],
         allow_short=config["trading"]["allow_short"],
     )
-    active_broker = alpaca_broker if alpaca_broker else broker
+    active_broker = connected_broker
 
     result = active_broker.execute(
         action=decision["action"],
@@ -1143,8 +1246,7 @@ def main():
         tp_price=decision.get("tp_price"),
     )
     
-    if alpaca_broker:
-        portfolio = alpaca_broker.sync_portfolio(portfolio)
+    portfolio = connected_broker.sync_portfolio(portfolio)
     log_trade(run_log_path, result, reason=decision.get("reason"))
 
     portfolio.save(state_path)
@@ -1187,6 +1289,7 @@ def main():
         error=None,
         equity_series=equity_series,
         decision_history=load_decision_history(trades_path, limit=12),
+        ibkr_connected=connected_broker.is_connected() if connected_broker else None,
     )
     write_dashboard(dashboard_path, dashboard_payload)
 

@@ -1,6 +1,6 @@
 # Grok-Agentic-Trader
 
-Autonomous Grok-powered trading bot (Day Trader) that integrates with **Alpaca Markets** for real and paper trading.
+Autonomous Grok-powered trading bot (Day Trader) that integrates with **Interactive Brokers (IBKR)** for real and paper trading.
 
 ## How it works
 
@@ -11,7 +11,7 @@ flowchart TD
   B -->|Out of session| H[Auto HOLD and logs]
   C --> D[LLM decision: Grok]
   D --> E{BUY / SELL / HOLD}
-  E -->|Trade| F[Alpaca / Paper broker]
+  E -->|Trade| F[IBKR Broker]
   F --> G[Portfolio state]
   E -->|Hold| G
   G --> I[Dashboard JSON]
@@ -33,15 +33,19 @@ pip install -r requirements.txt
 2) Configure API keys:
 ```bash
 cp .env.example .env
-# Edit .env with your Grok API Key and Alpaca API Keys
+# Edit .env with your Grok API Key
 ```
 
-3) Run bot + UI:
+3) Start IB Gateway:
+- Launch IB Gateway (or TWS) and log in with your Paper/Live account.
+- Ensure API Settings: `Enable ActiveX and Socket Clients` = ON, `Read-Only API` = OFF, Port = `4002` (Paper).
+
+4) Run bot + UI:
 ```bash
 ./scripts/run_live.sh
 ```
 
-4) Open the UI: `http://localhost:8000`
+5) Open the UI: `http://localhost:8000`
 
 ## VPS (tmux)
 
@@ -85,7 +89,8 @@ This prevents unauthorized access to your dashboard and potential data theft.
 
 ## Features & Rules
 
-- **Broker**: Fully integrated with **Alpaca Markets** (Paper or Live).
+- **Broker**: Fully integrated with **Interactive Brokers (IBKR)** via `ib_insync`.
+- **GFV Guard**: Prevents Good Faith Violations by checking Settled Cash (T+1) before every BUY.
 - **Intraday Only**: 
   - Trades only during NYSE hours (15:30 - 22:00 FR / 09:30 - 16:00 NY).
   - **Force Close**: All positions are automatically liquidated at 22:00 FR (16:00 NY). No overnight risk.
@@ -93,12 +98,11 @@ This prevents unauthorized access to your dashboard and potential data theft.
   - **Stop Loss (SL)**: MANDATORY for every BUY. Auto-managed.
   - **Take Profit (TP)**: Optional (can be null for unrestricted gains).
 - **Assets**: US-listed Equities only (No Crypto, No FX).
-- **Auto-Sync**: On a fresh start (empty `data/` folder), the bot automatically syncs its starting cash with your Alpaca balance for correct PnL tracking.
+- **Auto-Sync**: On a fresh start (empty `data/` folder), the bot automatically syncs its starting cash with your IBKR balance.
 
 ## Configuration (`config/settings.json`)
 
-- **trading.broker**: `"alpaca"` (Recommended) or `"paper"`.
-- **trading.starting_cash**: Auto-updated from Alpaca on reset.
+- **trading.starting_cash**: Auto-updated from IBKR on reset.
 - **live_search**: Enable/Disable Grok's web browsing capability.
 
 ## Resetting for a Fresh Start
@@ -108,7 +112,7 @@ To reset the bot (e.g., when switching from Paper to Live or adding funds):
 2. Delete the local data: `rm -rf data/*`.
 3. Restart: `./scripts/run_live.sh`.
 
-The bot will detect the fresh start and align itself with your Alpaca account balance.
+The bot will detect the fresh start and align itself with your IBKR account balance.
 
 ## Disclaimer
 

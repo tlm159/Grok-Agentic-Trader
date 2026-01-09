@@ -10,6 +10,7 @@ class Portfolio:
     positions: dict = field(default_factory=dict)
     equity: float = None
     buying_power: float = None
+    settled_cash: float = None
 
     @staticmethod
     def _coerce_float(value, default):
@@ -50,8 +51,9 @@ class Portfolio:
                 cash=float(data.get("cash", starting_cash)),
                 currency=data.get("currency", currency),
                 positions=positions,
-                equity=data.get("equity"),  # Load persisted equity
-                buying_power=data.get("buying_power"),  # Load persisted buying_power
+                equity=data.get("equity"),
+                buying_power=data.get("buying_power"),
+                settled_cash=data.get("settled_cash"),
             )
         return cls(cash=float(starting_cash), currency=currency, positions={})
 
@@ -62,7 +64,8 @@ class Portfolio:
             "cash": self.cash,
             "currency": self.currency,
             "positions": self.positions,
-            "equity": self.equity,  # Save equity
-            "buying_power": self.buying_power,  # Save buying_power
+            "equity": self.equity,
+            "buying_power": self.buying_power,
+            "settled_cash": self.settled_cash,
         }
         state_path.write_text(json.dumps(payload, indent=2))

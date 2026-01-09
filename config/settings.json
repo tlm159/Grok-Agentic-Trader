@@ -24,7 +24,7 @@
   "trading": {
     "mode": "paper",
     "currency": "USD",
-    "starting_cash": 50.0,
+    "starting_cash": 100.0,
     "cycle_minutes": 30,
     "price_refresh_seconds": 10,
     "default_sl_pct": null,
@@ -36,8 +36,7 @@
     "allow_short": false,
     "universe_mode": "llm_any",
     "max_positions": null,
-    "max_trades_per_day": null,
-    "broker": "alpaca"
+    "max_trades_per_day": null
   },
   "paths": {
     "state_path": "data/state.json",
