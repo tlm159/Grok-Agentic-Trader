@@ -138,6 +138,13 @@ class AlpacaBroker:
         else:
             # Swing Trading Mode: No PDT guard needed (we never sell same day)
             side = OrderSide.BUY
+            
+            # SAFETY: Cap BUY notional at 99% of buying power to avoid rounding errors
+            buying_power = getattr(portfolio, 'buying_power', portfolio.cash)
+            if notional is not None and notional > buying_power * 0.99:
+                old_notional = notional
+                notional = round(buying_power * 0.99, 2)
+                print(f"💰 BUY POWER GUARD: Reduced notional from ${old_notional:.2f} to ${notional:.2f} (99% of ${buying_power:.2f})")
         
         # Prepare order data
         # Alpaca allows notional orders for fractional shares

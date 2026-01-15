@@ -37,7 +37,7 @@ TOP_100_STOCKS = [
     "LMT", "ADP", "MMC", "TJX", "CB", "VRTX", "AMT", "PLD", "MO", "TMUS",
     "LRCX", "ZTS", "CVS", "CI", "REGN", "BSX", "BDX", "SCHW", "SLB", "MU",
     "PANW", "COIN", "PLTR", "MSTR", "ROKU", "BLDR", "MRNA", "GM", "F", "RIVN",
-    "SOFI", "AFRM", "HOOD", "LCID", "NIO", "XPEV", "RBLX", "U", "SNOW", "NET"
+    "SOFI", "AFRM", "HOOD", "LCID", "NIO", "XPEV", "RBLX", "TSM", "SNOW", "NET"
 ]
 
 
