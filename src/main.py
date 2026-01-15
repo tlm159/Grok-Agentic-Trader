@@ -1253,9 +1253,19 @@ def main():
         # Stopwords: common English words + indices + currencies
         stopwords = {"THE", "AND", "FOR", "THAT", "WITH", "THIS", "FROM", "HAVE", "ARE", "NOT", "BUT", "ALL", "WHO", "WHAT", "WHEN", "WHERE", "WHY", "HOW", "CAN", "YOU", "YOUR", "THEY", "THEIR", "OUR", "WE", "SHE", "HE", "IT", "IS", "AM", "ARE", "WAS", "WERE", "BE", "BEEN", "BEING", "HAS", "HAD", "DO", "DOES", "DID", "JONES", "DOW", "NASDAQ", "NYSE", "AMEX", "ETF", "USD", "EUR", "GBP", "AUD", "CAD", "JPY", "CNY", "HKD", "CHF", "SEK", "NZD", "KRW", "SGD", "NOK", "MXN", "INR", "RUB", "ZAR", "TRY", "BRL", "TWD", "DKK", "PLN", "THB", "IDR", "HUF", "CZK", "ILS", "CLP", "PHP", "AED", "COP", "SAR", "MYR", "RON"}
         # Crypto blocklist: NOT US equities
-        crypto_blocklist = {"BTC", "ETH", "XRP", "BNB", "SOL", "ADA", "DOGE", "DOT", "AVAX", "SHIB", "MATIC", "LTC", "TRX", "LINK", "XLM", "ATOM", "UNI", "ETC", "XMR", "BCH", "FIL", "APT", "NEAR", "VET", "ICP", "QNT", "AAVE", "GRT", "ALGO", "EOS", "THETA", "SAND", "MANA", "AXS", "FTM", "RUNE", "ZEC", "EGLD", "XTZ", "FLOW", "NEO", "MKR", "KAVA", "SNX", "CHZ", "ENJ", "CRV", "LDO", "IMX", "APE", "RPL", "GMX", "STX", "OSMO", "PEPE", "WIF", "BONK", "FLOKI", "ARB", "OP", "SUI", "SEI", "TIA", "JUP", "PYTH", "RNDR", "FET", "TAO", "USDT", "USDC", "DAI", "BUSD", "TUSD", "CNBC", "US", "UK", "EU", "FED", "CEO", "CFO", "CTO", "IPO", "SEC", "FDA", "GDP", "CPI", "PPI", "PMI", "NFT", "DCA", "ATH", "ATL", "ROI", "APY", "APR", "ICO", "IEO", "IDO", "DAO", "DEX", "CEX", "AMM", "TVL", "HODL", "FOMO", "FUD"}
+        crypto_blocklist = {"BTC", "ETH", "XRP", "BNB", "SOL", "ADA", "DOGE", "DOT", "AVAX", "SHIB", "MATIC", "LTC", "TRX", "LINK", "XLM", "ATOM", "UNI", "ETC", "XMR", "BCH", "FIL", "APT", "NEAR", "VET", "ICP", "QNT", "AAVE", "GRT", "ALGO", "EOS", "THETA", "SAND", "MANA", "AXS", "FTM", "RUNE", "ZEC", "EGLD", "XTZ", "FLOW", "NEO", "MKR", "KAVA", "SNX", "CHZ", "ENJ", "CRV", "LDO", "IMX", "APE", "RPL", "GMX", "STX", "OSMO", "PEPE", "WIF", "BONK", "FLOKI", "ARB", "OP", "SUI", "SEI", "TIA", "JUP", "PYTH", "RNDR", "FET", "TAO", "USDT", "USDC", "DAI", "BUSD", "TUSD", "CNBC", "US", "UK", "EU", "FED", "CEO", "CFO", "CTO", "IPO", "SEC", "FDA", "GDP", "CPI", "PPI", "PMI", "NFT", "DCA", "ATH", "ATL", "ROI", "APY", "APR", "ICO", "IEO", "IDO", "DAO", "DEX", "CEX", "AMM", "TVL", "HODL", "FOMO", "FUD", "RLUSD", "LMAX", "IB", "GSPC", "IXIC", "DJI", "RUT", "VIX", "HQ", "CNN", "DOJ", "EV"}
         
-        dynamic_tickers = [t for t in potential_tickers if t not in stopwords and t not in crypto_blocklist]
+        # Symbol normalization: common variations to correct tickers
+        symbol_mapping = {"TSMC": "TSM", "GOOGLE": "GOOGL", "FACEBOOK": "META", "FB": "META"}
+        
+        # Apply normalization and filtering
+        dynamic_tickers = []
+        for t in potential_tickers:
+            if t in stopwords or t in crypto_blocklist:
+                continue
+            # Normalize if mapping exists
+            normalized = symbol_mapping.get(t, t)
+            dynamic_tickers.append(normalized)
         
         if dynamic_tickers:
             # Append to watchlist (deduplicated)
