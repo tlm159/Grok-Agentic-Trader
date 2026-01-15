@@ -20,7 +20,142 @@ from alpaca_broker import AlpacaBroker
 import os
 import threading
 import time
+import yfinance as yf
 
+# Cache for market regime and top movers (refreshed per cycle)
+_market_regime_cache = {"regime": None, "details": None, "timestamp": None}
+_top_movers_cache = {"gainers": [], "volume_spikes": [], "timestamp": None}
+
+# Top 100 liquid US stocks for screening
+TOP_100_STOCKS = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK-B", "UNH", "JNJ",
+    "V", "XOM", "JPM", "PG", "MA", "HD", "CVX", "MRK", "ABBV", "LLY",
+    "PFE", "KO", "PEP", "COST", "AVGO", "TMO", "MCD", "WMT", "CSCO", "ABT",
+    "CRM", "ACN", "DHR", "NKE", "ADBE", "TXN", "NEE", "UPS", "PM", "RTX",
+    "HON", "QCOM", "LOW", "UNP", "INTC", "IBM", "BA", "CAT", "GE", "AMAT",
+    "AMD", "SBUX", "GS", "BLK", "ISRG", "MDLZ", "ADI", "GILD", "BKNG", "SYK",
+    "LMT", "ADP", "MMC", "TJX", "CB", "VRTX", "AMT", "PLD", "MO", "TMUS",
+    "LRCX", "ZTS", "CVS", "CI", "REGN", "BSX", "BDX", "SCHW", "SLB", "MU",
+    "PANW", "COIN", "PLTR", "MSTR", "ROKU", "BLDR", "MRNA", "GM", "F", "RIVN",
+    "SOFI", "AFRM", "HOOD", "LCID", "NIO", "XPEV", "RBLX", "U", "SNOW", "NET"
+]
+
+
+def get_market_regime():
+    """
+    Detect market regime using SPY (S&P 500 ETF) moving averages.
+    Returns: dict with regime, emoji, and details
+    """
+    global _market_regime_cache
+    
+    # Check cache (valid for 30 min)
+    if _market_regime_cache["timestamp"]:
+        age = (datetime.now() - _market_regime_cache["timestamp"]).total_seconds()
+        if age < 1800:  # 30 minutes
+            return _market_regime_cache
+    
+    try:
+        spy = yf.Ticker("SPY")
+        hist = spy.history(period="1mo")
+        
+        if len(hist) < 20:
+            return {"regime": "UNKNOWN", "emoji": "❓", "details": "Insufficient data"}
+        
+        current_price = hist['Close'].iloc[-1]
+        sma_5 = hist['Close'].tail(5).mean()
+        sma_20 = hist['Close'].tail(20).mean()
+        
+        if current_price > sma_5 > sma_20:
+            regime = "BULL"
+            emoji = "🟢"
+            advice = "Marché haussier, tu peux être agressif."
+        elif current_price < sma_5 < sma_20:
+            regime = "BEAR"
+            emoji = "🔴"
+            advice = "Marché baissier, sois prudent ou reste en cash."
+        else:
+            regime = "SIDEWAYS"
+            emoji = "🟡"
+            advice = "Pas de tendance claire, attends un catalyseur fort."
+        
+        details = f"SPY: {current_price:.2f} | SMA5: {sma_5:.2f} | SMA20: {sma_20:.2f} → {advice}"
+        
+        _market_regime_cache = {
+            "regime": regime,
+            "emoji": emoji,
+            "details": details,
+            "timestamp": datetime.now()
+        }
+        return _market_regime_cache
+        
+    except Exception as e:
+        print(f"⚠️ Market regime error: {e}")
+        return {"regime": "UNKNOWN", "emoji": "❓", "details": str(e)}
+
+
+def get_top_movers():
+    """
+    Scan top 100 stocks for gainers and volume spikes.
+    Returns: dict with gainers and volume_spikes lists
+    """
+    global _top_movers_cache
+    
+    # Check cache (valid for 30 min)
+    if _top_movers_cache["timestamp"]:
+        age = (datetime.now() - _top_movers_cache["timestamp"]).total_seconds()
+        if age < 1800:
+            return _top_movers_cache
+    
+    gainers = []
+    volume_spikes = []
+    
+    try:
+        # Batch download for speed
+        tickers = yf.Tickers(" ".join(TOP_100_STOCKS))
+        
+        for symbol in TOP_100_STOCKS:
+            try:
+                ticker = tickers.tickers.get(symbol)
+                if not ticker:
+                    continue
+                    
+                hist = ticker.history(period="22d")  # ~1 month of trading days
+                if len(hist) < 2:
+                    continue
+                
+                current_price = hist['Close'].iloc[-1]
+                prev_close = hist['Close'].iloc[-2]
+                change_pct = ((current_price / prev_close) - 1) * 100
+                
+                # Gainers: +3% or more
+                if change_pct >= 3:
+                    gainers.append({"symbol": symbol, "change": change_pct})
+                
+                # Volume spikes: current vol > 2x average
+                if len(hist) >= 20:
+                    avg_volume = hist['Volume'].tail(20).mean()
+                    current_volume = hist['Volume'].iloc[-1]
+                    if avg_volume > 0 and current_volume > avg_volume * 2:
+                        vol_ratio = current_volume / avg_volume
+                        volume_spikes.append({"symbol": symbol, "vol_ratio": vol_ratio})
+                        
+            except Exception:
+                continue
+        
+        # Sort and limit
+        gainers = sorted(gainers, key=lambda x: x["change"], reverse=True)[:5]
+        volume_spikes = sorted(volume_spikes, key=lambda x: x["vol_ratio"], reverse=True)[:5]
+        
+        _top_movers_cache = {
+            "gainers": gainers,
+            "volume_spikes": volume_spikes,
+            "timestamp": datetime.now()
+        }
+        return _top_movers_cache
+        
+    except Exception as e:
+        print(f"⚠️ Top movers error: {e}")
+        return {"gainers": [], "volume_spikes": [], "timestamp": None}
 
 def load_recent_events(path, limit=5):
     log_path = Path(path)
@@ -367,10 +502,14 @@ def build_system_prompt():
         "## DECISION PROCESS\n"
         "\n"
         "### 1. ANALYSIS\n"
+        "- Check **MARKET REGIME**: BULL=aggressive, BEAR=prudent, SIDEWAYS=wait.\n"
+        "- Check **TOP MOVERS**: Prioritize stocks with +3% gains or volume spikes.\n"
         "- Read 'Live context' (recent news) and 'Market snapshot' (price, ATR)\n"
         "- Identify catalysts: earnings, upgrades, breaking news\n"
         "\n"
         "### 2. SIGNAL\n"
+        "- BULL + Top Mover + Positive news = BUY\n"
+        "- BEAR or no catalyst = HOLD (stay in cash)\n"
         "- Positive news + Bullish price = BUY\n"
         "- Uncertainty or high risk = HOLD\n"
         "- Existing position + target reached or bad news = SELL\n"
@@ -451,9 +590,22 @@ def build_user_prompt(
     paris_tz = pytz.timezone("Europe/Paris")
     current_time_paris = datetime.now(paris_tz).strftime("%Y-%m-%d %H:%M:%S %Z")
     
+    # Get market regime and top movers
+    regime_data = get_market_regime()
+    movers_data = get_top_movers()
+    
+    # Format top movers
+    gainers_str = ", ".join([f"{g['symbol']} +{g['change']:.1f}%" for g in movers_data.get("gainers", [])])
+    volume_str = ", ".join([f"{v['symbol']} ({v['vol_ratio']:.1f}x)" for v in movers_data.get("volume_spikes", [])])
+    
     return (
         "CONTEXT:\n"
         f"Current Date/Time: {current_time_paris}\n\n"
+        f"📊 MARKET REGIME: {regime_data.get('regime', 'UNKNOWN')} {regime_data.get('emoji', '')}\n"
+        f"{regime_data.get('details', '')}\n\n"
+        f"🔥 TOP MOVERS TODAY:\n"
+        f"Gainers: {gainers_str or 'None detected'}\n"
+        f"Volume Spikes: {volume_str or 'None detected'}\n\n"
         "Portfolio:\n"
         f"Cash: {portfolio.cash} {portfolio.currency}\n"
         f"Buying Power: {getattr(portfolio, 'buying_power', portfolio.cash)} {portfolio.currency}\n"
@@ -483,6 +635,7 @@ def build_user_prompt(
         "Refer to the SYSTEM INSTRUCTION for the required JSON Output Schema (Chain of Thought).\n"
         f"Set next_check_minutes to {fixed_minutes} (system uses a fixed schedule).\n"
     )
+
 
 
 
