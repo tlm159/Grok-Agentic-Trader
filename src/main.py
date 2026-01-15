@@ -380,6 +380,19 @@ def build_system_prompt():
         "- STOP LOSS MANDATORY: sl_price = Price - (1.5 × ATR). NEVER trade without SL.\n"
         "- Take Profit optional but recommended\n"
         "\n"
+        "### 4. EXIT STRATEGY (CRITICAL)\n"
+        "- **PATIENCE IS KEY**: Swing trading = hold 2-5 days minimum, NOT D+1.\n"
+        "- Do NOT sell just because you CAN sell. Sell because TP is near or news turned bad.\n"
+        "- If position is in small loss (-1% to -5%), HOLD unless major bad news.\n"
+        "- Let winners run: if price is going up, raise TP instead of selling early.\n"
+        "- Only SELL if: (1) TP reached, (2) SL hit, (3) Major negative catalyst.\n"
+        "\n"
+        "### 5. AUTO-CRITIQUE (Before every decision)\n"
+        "Ask yourself:\n"
+        "1. \"Did my last trades make or lose money?\" (Check Decision memory)\n"
+        "2. \"Am I selling too early out of fear?\"\n"
+        "3. \"Is there a REAL catalyst or am I just rotating for no reason?\"\n"
+        "\n"
         "---\n"
         "\n"
         "## ABSOLUTE RULES\n"
@@ -454,7 +467,11 @@ def build_user_prompt(
         f"Leverage: {market_snapshot.get('leverage')}\n"
         f"Cash ratio: {market_snapshot.get('cash_ratio')}\n\n"
         f"Equity change since last snapshot: {json.dumps(equity_delta)}\n\n"
-        f"Starting cash budget: {starting_cash} {portfolio.currency}\n\n"
+        f"Starting cash budget: {starting_cash} {portfolio.currency}\n"
+        f"**PERFORMANCE**: Current equity {market_snapshot.get('equity'):.2f}$ vs Starting {starting_cash}$ = "
+        f"{'GAIN' if market_snapshot.get('equity', 0) >= starting_cash else 'LOSS'} of "
+        f"{abs(market_snapshot.get('equity', 0) - starting_cash):.2f}$ "
+        f"({((market_snapshot.get('equity', 0) / starting_cash - 1) * 100):.1f}%)\n\n"
         f"Live context:\n{live_context}\n\n"
         "Decision memory:\n"
         f"{json.dumps(decision_memory)}\n\n"
@@ -1221,6 +1238,16 @@ def main():
 
     symbol = decision["symbol"]
     notional = decision["notional"]
+    
+    # AUTO-NOTIONAL FIX: For SELL, if notional is 0 or None, use full position value
+    if decision["action"] == "SELL" and symbol in portfolio.positions:
+        if notional is None or notional <= 0:
+            pos = Portfolio.normalize_position(portfolio.positions[symbol])
+            qty = pos.get("qty", 0)
+            current_price = pos.get("current_price") or get_last_price(symbol)
+            if qty > 0 and current_price:
+                notional = qty * current_price
+                print(f"📊 Auto-notional SELL: {symbol} → {notional:.2f}$ (qty={qty}, price={current_price})")
 
     if is_crypto_or_fx(symbol):
         append_event(
