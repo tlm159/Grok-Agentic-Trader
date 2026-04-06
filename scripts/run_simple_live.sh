@@ -11,7 +11,9 @@ if [[ -f "$LOCK_FILE" ]]; then
 fi
 echo "$$" > "$LOCK_FILE"
 
-python3 src/reset_all.py
+# Preserve local state/logs across restarts.
+# Use `python3 src/reset_all.py` manually when you explicitly want a fresh reset.
+
 python3 src/loop.py &
 BOT_PID=$!
 python3 src/price_loop.py &

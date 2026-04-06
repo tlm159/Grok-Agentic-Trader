@@ -1,21 +1,21 @@
 {
   "llm": {
     "provider": "xai",
-    "model": "grok-4-1-fast-reasoning",
+    "model": "grok-4.20-0309-reasoning",
     "base_url": "https://api.x.ai/v1",
     "temperature": 0.2
   },
   "live_search": {
     "enabled": true,
-    "model": "grok-4-1-fast-reasoning",
+    "model": "grok-4.20-0309-reasoning",
     "queries": [
-      "Find the most recent market-moving news and sentiment about US stocks and crypto. Focus on tickers and the last 24 hours. Summarize in 5 bullets.",
-      "Identify the top 5 trending tickers on social media and explain why they are trending (last 24 hours).",
-      "List any major macro events, earnings, or regulatory headlines affecting markets today."
+      "Find the most recent market-moving news and sentiment about US stocks only. Focus on tickers and the last 24 hours. Summarize in 5 bullets.",
+      "Identify the top 5 trending US-listed equity tickers on social media and explain why they are trending (last 24 hours).",
+      "List any major macro events, earnings, or regulatory headlines affecting US equities today."
     ],
     "max_sources": 2,
     "max_queries_per_run": 1,
-    "cooldown_minutes": 0,
+    "cooldown_minutes": 60,
     "cache_path": "data/live_search_cache.json"
   },
   "market": {
@@ -24,7 +24,7 @@
   "trading": {
     "mode": "paper",
     "currency": "USD",
-    "starting_cash": 50.0,
+    "starting_cash": 100.0,
     "cycle_minutes": 30,
     "price_refresh_seconds": 5,
     "default_sl_pct": null,
