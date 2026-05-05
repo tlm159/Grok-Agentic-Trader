@@ -1,13 +1,13 @@
 {
   "llm": {
     "provider": "xai",
-    "model": "grok-4-1-fast-reasoning",
+    "model": "grok-4.3",
     "base_url": "https://api.x.ai/v1",
     "temperature": 0.2
   },
   "live_search": {
     "enabled": false,
-    "model": "grok-4-1-fast-reasoning",
+    "model": "grok-4.3",
     "queries": [
       "Find the most recent market-moving news and sentiment about US stocks and crypto. Focus on tickers and the last 24 hours. Summarize in 5 bullets.",
       "Identify the top 5 trending tickers on social media and explain why they are trending (last 24 hours).",
