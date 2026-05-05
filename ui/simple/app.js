@@ -38,6 +38,15 @@ function formatTime(value) {
   return date.toLocaleString();
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function updatePositions(positions) {
   const container = $("positions");
   container.innerHTML = "";
@@ -51,7 +60,7 @@ function updatePositions(positions) {
   if (!entries.length) {
     const row = document.createElement("div");
     row.className = "table-row";
-    row.innerHTML = "<div>-</div><div>-</div><div>-</div><div>-</div>";
+    row.innerHTML = "<div>-</div><div>-</div><div>-</div><div>-</div><div>-</div><div>-</div>";
     container.appendChild(row);
     return;
   }
@@ -71,7 +80,7 @@ function updatePositions(positions) {
     const pnlClass = pnl === null || pnl === undefined ? "" : pnl >= 0 ? "good" : "bad";
     const pnlDetail = pnlPct === null || pnlPct === undefined ? "" : ` (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%)`;
     row.innerHTML = `
-      <div>${symbol}</div>
+      <div>${escapeHtml(symbol)}</div>
       <div>${formatValue(qty)}</div>
       <div>${formatValue(price)}</div>
       <div>${formatValue(value)}</div>
@@ -102,8 +111,8 @@ function updateTrade(trade) {
   const row = document.createElement("div");
   row.className = "table-row";
   row.innerHTML = `
-    <div>${trade.action || "-"}</div>
-    <div>${trade.symbol || "-"}</div>
+    <div>${escapeHtml(trade.action || "-")}</div>
+    <div>${escapeHtml(trade.symbol || "-")}</div>
     <div>${formatValue(trade.qty)}</div>
     <div>${formatValue(trade.price)}</div>
     <div>${formatValue(trade.notional)}</div>
@@ -161,14 +170,14 @@ function updateHistory(history) {
     const sltp = item.sl_price || item.tp_price ? `SL ${formatValue(item.sl_price)} / TP ${formatValue(item.tp_price)}` : "SL/TP: -";
 
     card.innerHTML = `
-      <div class="history-meta">${when}</div>
-      <h4>${action} ${symbol}</h4>
-      <div class="history-meta">Notional: ${notional} | Confidence: ${confidence}</div>
+      <div class="history-meta">${escapeHtml(when)}</div>
+      <h4>${escapeHtml(action)} ${escapeHtml(symbol)}</h4>
+      <div class="history-meta">Notional: ${notional} | Confidence: ${escapeHtml(confidence)}</div>
       <div class="history-meta">${sltp}</div>
-      <p class="history-body">${reason}</p>
-      <p class="history-body">${reflection}</p>
-      <p class="history-body">${positionsSummary}</p>
-      <p class="history-body">${evidenceText}</p>
+      <p class="history-body">${escapeHtml(reason)}</p>
+      <p class="history-body">${escapeHtml(reflection)}</p>
+      <p class="history-body">${escapeHtml(positionsSummary)}</p>
+      <p class="history-body">${escapeHtml(evidenceText)}</p>
     `;
     container.appendChild(card);
   });

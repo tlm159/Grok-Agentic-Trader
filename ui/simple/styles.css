@@ -190,6 +190,10 @@ h1 {
   font-size: 11px;
 }
 
+.positions-table .table-row {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
 .history {
   display: grid;
   gap: 12px;

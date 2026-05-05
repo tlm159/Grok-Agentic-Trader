@@ -587,10 +587,28 @@ def build_user_prompt(
     decision_memory,
     fixed_minutes,
 ):
-    from datetime import datetime
-    import pytz
-    paris_tz = pytz.timezone("Europe/Paris")
+    paris_tz = ZoneInfo("Europe/Paris")
     current_time_paris = datetime.now(paris_tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+
+    current_equity = market_snapshot.get("equity")
+    try:
+        current_equity_value = float(current_equity)
+    except (TypeError, ValueError):
+        current_equity_value = None
+    try:
+        starting_cash_value = float(starting_cash)
+    except (TypeError, ValueError):
+        starting_cash_value = 0.0
+
+    if current_equity_value is not None and starting_cash_value > 0:
+        performance_line = (
+            f"**PERFORMANCE**: Current equity {current_equity_value:.2f}$ vs Starting {starting_cash_value:.2f}$ = "
+            f"{'GAIN' if current_equity_value >= starting_cash_value else 'LOSS'} of "
+            f"{abs(current_equity_value - starting_cash_value):.2f}$ "
+            f"({((current_equity_value / starting_cash_value - 1) * 100):.1f}%)\n\n"
+        )
+    else:
+        performance_line = "**PERFORMANCE**: unavailable because equity or starting cash is invalid.\n\n"
     
     # Get market regime and top movers
     regime_data = get_market_regime()
@@ -622,10 +640,7 @@ def build_user_prompt(
         f"Cash ratio: {market_snapshot.get('cash_ratio')}\n\n"
         f"Equity change since last snapshot: {json.dumps(equity_delta)}\n\n"
         f"Starting cash budget: {starting_cash} {portfolio.currency}\n"
-        f"**PERFORMANCE**: Current equity {market_snapshot.get('equity'):.2f}$ vs Starting {starting_cash}$ = "
-        f"{'GAIN' if market_snapshot.get('equity', 0) >= starting_cash else 'LOSS'} of "
-        f"{abs(market_snapshot.get('equity', 0) - starting_cash):.2f}$ "
-        f"({((market_snapshot.get('equity', 0) / starting_cash - 1) * 100):.1f}%)\n\n"
+        f"{performance_line}"
         f"Live context:\n{live_context}\n\n"
         "Decision memory:\n"
         f"{json.dumps(decision_memory)}\n\n"
@@ -967,7 +982,18 @@ def main():
     # Init Broker (Alpaca)
     alpaca_key = os.getenv("ALPACA_API_KEY")
     alpaca_secret = os.getenv("ALPACA_SECRET_KEY")
-    connected_broker = AlpacaBroker(key_id=alpaca_key, secret_key=alpaca_secret, paper=True)
+    connected_broker = None
+    trading_mode = str(config["trading"].get("mode", "paper")).lower()
+    if alpaca_key and alpaca_secret:
+        connected_broker = AlpacaBroker(
+            key_id=alpaca_key,
+            secret_key=alpaca_secret,
+            paper=trading_mode != "live",
+        )
+    else:
+        message = "Alpaca credentials missing; using local paper broker only."
+        print(f"⚠️ {message}")
+        append_run_log(run_log_path, message)
     
     # Start background price refresh thread (updates dashboard every 10s)
     start_price_refresh_thread(config, connected_broker, state_path, dashboard_path, trades_path, run_log_path)
@@ -1475,7 +1501,7 @@ def main():
         allow_negative_cash=config["trading"]["allow_negative_cash"],
         allow_short=config["trading"]["allow_short"],
     )
-    active_broker = connected_broker
+    active_broker = connected_broker if connected_broker else broker
 
     result = active_broker.execute(
         action=decision["action"],
@@ -1487,7 +1513,8 @@ def main():
         tp_price=decision.get("tp_price"),
     )
     
-    portfolio = connected_broker.sync_portfolio(portfolio)
+    if connected_broker:
+        portfolio = connected_broker.sync_portfolio(portfolio)
     log_trade(run_log_path, result, reason=decision.get("reason"))
 
     portfolio.save(state_path)

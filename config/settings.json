@@ -22,9 +22,9 @@
     "provider": "yfinance"
   },
   "trading": {
-    "mode": "paper",
+    "mode": "live",
     "currency": "USD",
-    "starting_cash": 100.0,
+    "starting_cash": 57.67,
     "cycle_minutes": 30,
     "price_refresh_seconds": 5,
     "default_sl_pct": null,
@@ -32,7 +32,7 @@
     "universe": [],
     "watchlist": [],
     "symbol_rules": "US-listed equities only (no crypto or FX pairs).",
-    "allow_negative_cash": true,
+    "allow_negative_cash": false,
     "allow_short": false,
     "universe_mode": "llm_any",
     "max_positions": null,
