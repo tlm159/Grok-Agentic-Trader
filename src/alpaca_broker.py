@@ -2,8 +2,8 @@ import os
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest
-from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
+from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
 from state import Portfolio
 from broker import TradeResult
 
@@ -19,6 +19,32 @@ class AlpacaBroker:
             return True
         except Exception:
             return False
+
+    @staticmethod
+    def _timestamp():
+        return datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _is_held_for_orders_error(error):
+        text = str(error).lower()
+        return "held_for_orders" in text or "insufficient qty available" in text
+
+    def has_pending_exit_order(self, symbol):
+        """Return True when Alpaca already has an open SELL order for this symbol."""
+        try:
+            request = GetOrdersRequest(
+                status=QueryOrderStatus.OPEN,
+                side=OrderSide.SELL,
+                symbols=[symbol],
+            )
+            return len(self.client.get_orders(filter=request)) > 0
+        except Exception as e:
+            print(f"⚠️ Could not check pending exit orders for {symbol}: {e}")
+            return False
+
+    def _pending_exit_result(self, symbol, price, notional):
+        timestamp = self._timestamp()
+        return TradeResult("PENDING_EXIT", symbol, 0, price, notional or 0, timestamp)
 
     def get_day_trade_count(self):
         """
@@ -121,7 +147,7 @@ class AlpacaBroker:
             # SAFETY GUARD 1: Prevent opening Short positions if no position exists
             if symbol not in portfolio.positions:
                 print(f"⚠️ SAFETY: Blocked SELL on {symbol} (No Position). Preventing Accidental Short.")
-                timestamp = datetime.now(timezone.utc).isoformat()
+                timestamp = self._timestamp()
                 return TradeResult("BLOCKED", symbol, 0, price, 0, timestamp)
             
             # SAFETY GUARD 2: Prevent same-day sells (PDT rule)
@@ -131,7 +157,7 @@ class AlpacaBroker:
             
             if open_date == today_str:
                 print(f"🛑 SAME-DAY GUARD: Blocked SELL {symbol}. Position opened today ({open_date}). Wait until tomorrow.")
-                timestamp = datetime.now(timezone.utc).isoformat()
+                timestamp = self._timestamp()
                 return TradeResult("BLOCKED_SAME_DAY", symbol, 0, price, 0, timestamp)
 
             side = OrderSide.SELL
@@ -169,9 +195,13 @@ class AlpacaBroker:
             # FIX: Use close_position for SELL to avoid "insufficient qty" errors due to fractional rounding 
             # or price fluctuations when using 'notional'.
             # Assumes we want to close the ENTIRE position.
+            if self.has_pending_exit_order(symbol):
+                print(f"⏳ EXIT PENDING: SELL already open for {symbol}; skipping duplicate close_position.")
+                return self._pending_exit_result(symbol, price, notional)
+
             try:
                 self.client.close_position(symbol_or_asset_id=symbol)
-                timestamp = datetime.now(timezone.utc).isoformat()
+                timestamp = self._timestamp()
                 return TradeResult(
                     action="SELL",
                     symbol=symbol,
@@ -181,7 +211,9 @@ class AlpacaBroker:
                     timestamp=timestamp
                 )
             except Exception as e:
-                # Fallback if close_position fails (e.g. 404/no pos) or partial logic needed later
+                if self._is_held_for_orders_error(e):
+                    print(f"⏳ EXIT PENDING: Alpaca is already holding {symbol} qty for an exit order.")
+                    return self._pending_exit_result(symbol, price, notional)
                 raise RuntimeError(f"Alpaca Close Failed: {e}")
 
         try:

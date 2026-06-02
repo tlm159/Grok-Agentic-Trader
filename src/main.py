@@ -809,9 +809,6 @@ def check_and_execute_exits(portfolio, market_snapshot, broker, trades_path, run
         
         print(f"🚨 AUTO-EXIT TRIGGERED: {trigger_type} on {symbol} at {price}")
         
-        # Determine strict or abstract broker
-        is_paper = isinstance(broker, PaperBroker)
-        
         try:
             # Execute SELL
             # For SL/TP, we want to close the position.
@@ -827,7 +824,10 @@ def check_and_execute_exits(portfolio, market_snapshot, broker, trades_path, run
             )
             
             # Log it
-            reason = f"Running Stop Loss / Take Profit: {trigger_type} hit at {price}"
+            if result.action == "PENDING_EXIT":
+                reason = f"Exit already pending for {symbol}: {trigger_type} hit at {price}"
+            else:
+                reason = f"Running Stop Loss / Take Profit: {trigger_type} hit at {price}"
             log_trade(run_log_path, result, reason=reason)
             
             # Update state/history
@@ -847,10 +847,20 @@ def check_and_execute_exits(portfolio, market_snapshot, broker, trades_path, run
                     "confidence": 1.0, # Forced exit
                 },
             )
-            executed = True
+            executed = executed or result.action != "PENDING_EXIT"
             
         except Exception as e:
             print(f"⚠️ Auto-Exit Failed for {symbol}: {e}")
+            append_event(
+                trades_path,
+                {
+                    "type": "auto_exit_error",
+                    "symbol": symbol,
+                    "price": price,
+                    "trigger": trigger_type,
+                    "message": str(e),
+                },
+            )
             
     return executed
 
@@ -1067,13 +1077,27 @@ def main():
         last_trade = None
         for trigger in exit_triggers:
             notional = trigger["qty"] * trigger["price"]
-            result = active_broker.execute(
-                action="SELL",
-                symbol=trigger["symbol"],
-                notional=notional,
-                price=trigger["price"],
-                portfolio=portfolio,
-            )
+            try:
+                result = active_broker.execute(
+                    action="SELL",
+                    symbol=trigger["symbol"],
+                    notional=notional,
+                    price=trigger["price"],
+                    portfolio=portfolio,
+                )
+            except Exception as exc:
+                append_event(
+                    trades_path,
+                    {
+                        "type": "auto_exit_error",
+                        "symbol": trigger["symbol"],
+                        "price": trigger["price"],
+                        "trigger": trigger["trigger"],
+                        "message": str(exc),
+                    },
+                )
+                append_run_log(run_log_path, f"Auto-exit error for {trigger['symbol']}: {exc}")
+                continue
             last_trade = result
             append_event(
                 trades_path,
@@ -1085,7 +1109,13 @@ def main():
                     "trigger": trigger["trigger"],
                     "sl": trigger["sl"],
                     "tp": trigger["tp"],
+                    "status": result.action,
                 },
+            )
+            reason = (
+                f"AUTO_EXIT_PENDING_{trigger['trigger']}"
+                if result.action == "PENDING_EXIT"
+                else f"AUTO_EXIT_{trigger['trigger']}"
             )
             append_event(
                 trades_path,
@@ -1099,11 +1129,11 @@ def main():
                         "notional": result.notional,
                         "timestamp": result.timestamp,
                     },
-                    "reason": f"AUTO_EXIT_{trigger['trigger']}",
+                    "reason": reason,
                     "confidence": None,
                 },
             )
-            log_trade(run_log_path, result, reason="AUTO_EXIT")
+            log_trade(run_log_path, result, reason=reason)
         
         if connected_broker:
             portfolio = connected_broker.sync_portfolio(portfolio)
