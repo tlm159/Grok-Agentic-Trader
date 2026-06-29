@@ -48,12 +48,52 @@ def load_decision_history(trades_path, limit=12):
             if skip_next_parsed:
                 skip_next_parsed = False
                 continue
+            decision = event.get("decision", {})
         elif event_type not in {"decision_fallback"}:
-            continue
-        decision = event.get("decision", {})
+            if event_type == "same_day_exit_suppressed":
+                trigger = event.get("trigger", "EXIT")
+                symbol = event.get("symbol")
+                blocked_until = event.get("blocked_until")
+                decision = {
+                    "action": "BLOCKED",
+                    "symbol": symbol,
+                    "notional": None,
+                    "reason": f"{trigger} touché sur {symbol}, vente bloquée same-day.",
+                    "confidence": 1.0,
+                    "reflection": f"Sortie supprimée jusqu'à {blocked_until} pour éviter les doublons Alpaca.",
+                    "sl_price": None,
+                    "tp_price": None,
+                    "positions_summary": f"Position ouverte: {symbol}.",
+                    "evidence": [f"{trigger} hit", "Same-day guard"],
+                }
+            elif event_type == "auto_exit":
+                status = event.get("status") or "AUTO_EXIT"
+                symbol = event.get("symbol")
+                trigger = event.get("trigger", "EXIT")
+                decision = {
+                    "action": status,
+                    "symbol": symbol,
+                    "notional": None,
+                    "reason": f"Auto-exit {trigger} sur {symbol}: {status}.",
+                    "confidence": 1.0,
+                    "reflection": f"Prix {event.get('price')} | SL {event.get('sl')} | TP {event.get('tp')}",
+                    "sl_price": event.get("sl"),
+                    "tp_price": event.get("tp"),
+                    "positions_summary": f"Position ouverte: {symbol}.",
+                    "evidence": [f"{trigger} trigger"],
+                }
+            else:
+                continue
+        else:
+            decision = event.get("decision", {})
         
         # Deduplication: Key based on timestamp, action, symbol
-        key = (event.get("timestamp"), decision.get("action"), decision.get("symbol"))
+        key = (
+            event.get("timestamp"),
+            event_type,
+            decision.get("action"),
+            decision.get("symbol"),
+        )
         if key in seen:
             continue
         seen.add(key)

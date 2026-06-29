@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -25,6 +25,7 @@ import yfinance as yf
 # Cache for market regime and top movers (refreshed per cycle)
 _market_regime_cache = {"regime": None, "details": None, "timestamp": None}
 _top_movers_cache = {"gainers": [], "volume_spikes": [], "timestamp": None}
+_same_day_exit_block_until = {}
 
 # Top 100 liquid US stocks for screening
 TOP_100_STOCKS = [
@@ -403,6 +404,24 @@ def list_exit_triggers(market_snapshot):
                 }
             )
     return triggers
+
+
+def is_same_day_exit_suppressed(symbol, trigger_type):
+    key = (symbol, trigger_type)
+    until = _same_day_exit_block_until.get(key)
+    if until is None:
+        return False
+    if datetime.now(timezone.utc) < until:
+        return True
+    _same_day_exit_block_until.pop(key, None)
+    return False
+
+
+def suppress_same_day_exit(symbol, trigger_type):
+    now = datetime.now(timezone.utc)
+    until = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    _same_day_exit_block_until[(symbol, trigger_type)] = until
+    return until.isoformat()
 
 
 def close_all_positions(portfolio, broker, trades_path, reason):
@@ -806,6 +825,9 @@ def check_and_execute_exits(portfolio, market_snapshot, broker, trades_path, run
         qty = trigger["qty"]
         price = trigger["price"]
         trigger_type = trigger["trigger"]
+
+        if is_same_day_exit_suppressed(symbol, trigger_type):
+            continue
         
         print(f"🚨 AUTO-EXIT TRIGGERED: {trigger_type} on {symbol} at {price}")
         
@@ -826,6 +848,22 @@ def check_and_execute_exits(portfolio, market_snapshot, broker, trades_path, run
             # Log it
             if result.action == "PENDING_EXIT":
                 reason = f"Exit already pending for {symbol}: {trigger_type} hit at {price}"
+            elif result.action == "BLOCKED_SAME_DAY":
+                blocked_until = suppress_same_day_exit(symbol, trigger_type)
+                reason = (
+                    f"Same-day exit blocked for {symbol}: {trigger_type} hit at {price}; "
+                    f"suppressed until {blocked_until}"
+                )
+                append_event(
+                    trades_path,
+                    {
+                        "type": "same_day_exit_suppressed",
+                        "symbol": symbol,
+                        "price": price,
+                        "trigger": trigger_type,
+                        "blocked_until": blocked_until,
+                    },
+                )
             else:
                 reason = f"Running Stop Loss / Take Profit: {trigger_type} hit at {price}"
             log_trade(run_log_path, result, reason=reason)
@@ -847,7 +885,7 @@ def check_and_execute_exits(portfolio, market_snapshot, broker, trades_path, run
                     "confidence": 1.0, # Forced exit
                 },
             )
-            executed = executed or result.action != "PENDING_EXIT"
+            executed = executed or result.action not in {"PENDING_EXIT", "BLOCKED_SAME_DAY"}
             
         except Exception as e:
             print(f"⚠️ Auto-Exit Failed for {symbol}: {e}")
@@ -1076,11 +1114,16 @@ def main():
         
         last_trade = None
         for trigger in exit_triggers:
+            symbol = trigger["symbol"]
+            trigger_type = trigger["trigger"]
+            if is_same_day_exit_suppressed(symbol, trigger_type):
+                continue
+
             notional = trigger["qty"] * trigger["price"]
             try:
                 result = active_broker.execute(
                     action="SELL",
-                    symbol=trigger["symbol"],
+                    symbol=symbol,
                     notional=notional,
                     price=trigger["price"],
                     portfolio=portfolio,
@@ -1090,33 +1133,47 @@ def main():
                     trades_path,
                     {
                         "type": "auto_exit_error",
-                        "symbol": trigger["symbol"],
+                        "symbol": symbol,
                         "price": trigger["price"],
-                        "trigger": trigger["trigger"],
+                        "trigger": trigger_type,
                         "message": str(exc),
                     },
                 )
-                append_run_log(run_log_path, f"Auto-exit error for {trigger['symbol']}: {exc}")
+                append_run_log(run_log_path, f"Auto-exit error for {symbol}: {exc}")
                 continue
             last_trade = result
+            blocked_until = None
+            if result.action == "BLOCKED_SAME_DAY":
+                blocked_until = suppress_same_day_exit(symbol, trigger_type)
+                append_event(
+                    trades_path,
+                    {
+                        "type": "same_day_exit_suppressed",
+                        "symbol": symbol,
+                        "price": trigger["price"],
+                        "trigger": trigger_type,
+                        "blocked_until": blocked_until,
+                    },
+                )
             append_event(
                 trades_path,
                 {
                     "type": "auto_exit",
-                    "symbol": trigger["symbol"],
+                    "symbol": symbol,
                     "qty": trigger["qty"],
                     "price": trigger["price"],
-                    "trigger": trigger["trigger"],
+                    "trigger": trigger_type,
                     "sl": trigger["sl"],
                     "tp": trigger["tp"],
                     "status": result.action,
                 },
             )
-            reason = (
-                f"AUTO_EXIT_PENDING_{trigger['trigger']}"
-                if result.action == "PENDING_EXIT"
-                else f"AUTO_EXIT_{trigger['trigger']}"
-            )
+            if result.action == "PENDING_EXIT":
+                reason = f"AUTO_EXIT_PENDING_{trigger_type}"
+            elif result.action == "BLOCKED_SAME_DAY":
+                reason = f"AUTO_EXIT_BLOCKED_SAME_DAY_{trigger_type}_UNTIL_{blocked_until}"
+            else:
+                reason = f"AUTO_EXIT_{trigger_type}"
             append_event(
                 trades_path,
                 {
